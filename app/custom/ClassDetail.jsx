@@ -477,6 +477,11 @@ function ClassDetailInner({
               ) : (
                 <p className="cd-side-total">Taught by {cls.teacher}</p>
               )}
+              {cls.productId ? (
+                <Link className="cd-side-primary" href={`/checkout?product=${cls.productId}`}>
+                  Set up a subscription
+                </Link>
+              ) : null}
               <a className="cd-side-cta" href="#available-times">See all available times</a>
             </div>
           </aside>
@@ -487,7 +492,11 @@ function ClassDetailInner({
         <div>
           <b>₹{cls.price.toLocaleString()}</b> <span>/ session</span>
         </div>
-        <a href="#available-times">See times</a>
+        {cls.productId ? (
+          <Link href={`/checkout?product=${cls.productId}`}>Set up a subscription</Link>
+        ) : (
+          <a href="#available-times">See times</a>
+        )}
       </div>
 
       <style>{css}</style>
@@ -630,6 +639,13 @@ const css = `
 .cd-side-price i{ font-style:normal; color:var(--brand-ink-soft); font-size:.84rem; }
 .cd-side-total{ margin:0 0 16px; color:var(--brand-ink-soft); font-size:.82rem; }
 .cd-side-facts{ list-style:none; margin:0 0 18px; padding:14px 0 0; border-top:1px solid var(--brand-line); display:grid; gap:10px; font-size:.86rem; }
+.cd-side-primary{
+  display:block; text-align:center; padding:13px; border-radius:var(--radius); margin-bottom:10px;
+  background:var(--brand-accent); color:var(--brand-accent-ink);
+  font-family:var(--brand-font-display); font-weight:600; font-size:.92rem; text-decoration:none;
+  transition:filter var(--motion) var(--motion-ease);
+}
+.cd-side-primary:hover{ filter:brightness(1.06); }
 .cd-side-cta{
   display:block; text-align:center; padding:13px; border-radius:var(--radius);
   background:var(--brand-accent-soft); color:var(--brand-accent);
