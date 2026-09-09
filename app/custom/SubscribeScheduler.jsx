@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCart } from "../lib/cart";
 import { getSession } from "../lib/session";
@@ -179,6 +180,7 @@ function SubscribeSchedulerInner() {
 
 function SubscribePicker({ productId, productName, price, storeUserId, storeName, productImage }) {
   const router = useRouter();
+  const params = useSearchParams();
   const { add, setQty } = useCart();
   const [session, setSession] = useState(null);
 
@@ -188,13 +190,20 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     window.addEventListener("yelo-session", onChange);
     return () => window.removeEventListener("yelo-session", onChange);
   }, []);
-  const [preset, setPreset] = useState("everyday");
-  const [days, setDays] = useState(PRESETS[0].days);
-  const [date, setDate] = useState(todayISO());
-  const [time, setTime] = useState("");
-  const [endMode, setEndMode] = useState("occurrences"); // date | occurrences
-  const [endDate, setEndDate] = useState(addDaysISO(todayISO(), 28));
-  const [occurrences, setOccurrences] = useState(8);
+
+  // Coming BACK from checkout's "Schedule" step: the choices the parent already
+  // made ride on the URL, so rehydrate them instead of resetting to defaults.
+  const qpDays = (params.get("days") || "").split(",").filter(Boolean).map(Number);
+  const qpFreq = params.get("frequency");
+  const [preset, setPreset] = useState(
+    PRESETS.some((p) => p.key === qpFreq) ? qpFreq : qpDays.length ? "custom" : "everyday"
+  );
+  const [days, setDays] = useState(qpDays.length ? qpDays : PRESETS[0].days);
+  const [date, setDate] = useState(params.get("start") || todayISO());
+  const [time, setTime] = useState(params.get("time") || "");
+  const [endMode, setEndMode] = useState(params.get("endMode") === "date" ? "date" : "occurrences"); // date | occurrences
+  const [endDate, setEndDate] = useState(params.get("endDate") || addDaysISO(todayISO(), 28));
+  const [occurrences, setOccurrences] = useState(Math.max(1, Number(params.get("occurrences")) || 8));
 
   const [slotState, setSlotState] = useState("loading"); // loading | real | fallback
   const [times, setTimes] = useState(() => buildFallbackTimes(todayISO()));
@@ -281,9 +290,9 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   // the real/fallback slots were filtered), drop the stale selection instead
   // of silently keeping an unpickable value selected.
   useEffect(() => {
-    if (!time) return;
+    if (!time || slotState === "loading") return;
     if (!times.some((t) => t.value === time)) setTime("");
-  }, [times]);
+  }, [times, slotState]);
 
   const toggleDay = (i) => {
     setDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i].sort()));
@@ -407,6 +416,8 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     router.push(`/checkout?${p.toString()}`);
   };
 
+  const timeLabel = time ? times.find((t) => t.value === time)?.label || time : null;
+
   return (
     <div className="bell-sub" aria-label="Set up your subscription">
       <div className="sub-main">
@@ -414,6 +425,11 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
           <p className="sub-eyebrow">Enroll {productName ? `in ${productName}` : "in this class"}</p>
           <h3>Set up your subscription</h3>
           <p className="sub-sub">Pick how often it runs, which days and time, and when it ends. You confirm and pay on the next screen.</p>
+          <ol className="sub-steps" aria-label="Progress">
+            <li className="sub-step" data-state="current" aria-current="step"><span className="sub-step-dot">1</span>Schedule</li>
+            <li className="sub-step" data-state="next"><span className="sub-step-dot">2</span>Details &amp; payment</li>
+            <li className="sub-step" data-state="next"><span className="sub-step-dot">3</span>Confirmed</li>
+          </ol>
         </div>
 
         <div className="sub-block">
@@ -506,9 +522,13 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
 
       <aside className="sub-summary">
         <p className="sub-summary-kind">Subscription summary</p>
+        {productName && <p className="sub-summary-item">{productName}{storeName ? ` · ${storeName}` : ""}</p>}
         <dl className="sub-summary-grid">
+          <div><dt>Frequency</dt><dd style={{ textTransform: "capitalize" }}>{preset === "custom" ? "Custom" : PRESETS.find((p) => p.key === preset)?.label || "—"}</dd></div>
           <div><dt>Days</dt><dd>{effectiveDays.length ? effectiveDays.map((d) => DAY_NAMES[d]).join(", ") : "—"}</dd></div>
-          <div><dt>Time</dt><dd>{time ? times.find((t) => t.value === time)?.label || time : "—"}</dd></div>
+          <div><dt>Time</dt><dd>{timeLabel || "Not picked yet"}</dd></div>
+          <div><dt>Starts</dt><dd>{date || "—"}</dd></div>
+          <div><dt>Ends</dt><dd>{endMode === "date" ? (endDate || "—") : `After ${occurrences} session${occurrences === 1 ? "" : "s"}`}</dd></div>
           <div><dt>Sessions</dt><dd>{(realBill?.occurrences ?? sessionCount) || "—"}</dd></div>
         </dl>
         <div className="sub-price-row">
@@ -550,19 +570,39 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
 }
 
 const css = `
+/* Matches the checkout ("Details & payment"): a page-width two-column grid,
+   the form in a card on the left, an elevated sticky summary on the right —
+   same tokens, radii and shadow language as the .ck-* checkout. */
 .bell-sub{
-  border:1px solid var(--brand-line); border-radius:var(--radius-lg);
-  background:var(--brand-surface); margin:36px 0 0; overflow:hidden;
-  display:grid; grid-template-columns:1fr; font-family:var(--brand-font-body); color:var(--brand-ink);
-  box-shadow:0 1px 2px color-mix(in srgb, var(--brand-ink) 8%, transparent);
+  margin:28px auto 0; max-width:1000px;
+  display:grid; grid-template-columns:1fr; gap:16px; align-items:start;
+  font-family:var(--sans, var(--brand-font-body)); color:var(--ink, var(--brand-ink));
 }
-@media (min-width:820px){ .bell-sub{ grid-template-columns:1fr 300px; } }
+@media (min-width:900px){ .bell-sub{ grid-template-columns:1fr 360px; } }
 
-.sub-main{ padding:26px; display:grid; gap:22px; }
+.sub-main{
+  background:var(--card, var(--brand-surface));
+  border:1px solid var(--line, var(--brand-line));
+  border-radius:var(--r-lg, var(--radius-lg));
+  padding:22px; display:grid; gap:22px;
+}
 .sub-head{ display:grid; gap:10px; }
-.sub-eyebrow{ margin:0; font-size:.78rem; font-weight:600; color:var(--brand-ink-soft); }
-.sub-head h3{ margin:0; font-family:var(--brand-font-display); font-weight:600; font-size:1.35rem; }
-.sub-sub{ margin:0; font-size:.86rem; line-height:1.5; color:var(--brand-ink-soft); max-width:44ch; }
+.sub-eyebrow{ margin:0; font-size:.78rem; font-weight:600; color:var(--muted, var(--brand-ink-soft)); }
+.sub-head h3{ margin:0; font-family:var(--display, var(--brand-font-display)); font-weight:700; letter-spacing:-.02em; font-size:clamp(1.3rem,3vw,1.6rem); }
+.sub-sub{ margin:0; font-size:.86rem; line-height:1.5; color:var(--muted, var(--brand-ink-soft)); max-width:46ch; }
+
+.sub-steps{
+  list-style:none; margin:6px 0 0; padding:14px 0 0; border-top:1px solid var(--line, var(--brand-line));
+  display:flex; flex-wrap:wrap; gap:8px 16px;
+}
+.sub-step{ display:inline-flex; align-items:center; gap:8px; font-size:.83rem; font-weight:600; color:var(--muted, var(--brand-ink-soft)); }
+.sub-step-dot{
+  width:22px; height:22px; border-radius:50%; flex:none; display:grid; place-items:center; font-size:.72rem;
+  border:1px solid var(--line, var(--brand-line)); background:var(--paper, var(--brand-paper)); color:var(--muted, var(--brand-ink-soft));
+}
+.sub-step[data-state="current"]{ color:var(--ink, var(--brand-ink)); }
+.sub-step[data-state="current"] .sub-step-dot{ background:var(--brand-wash, var(--brand-accent-soft)); border-color:var(--brand, var(--brand-accent)); color:var(--brand, var(--brand-accent)); }
+@media (max-width:520px){ .sub-step[data-state="next"]{ font-size:0; gap:0; } .sub-step[data-state="next"] .sub-step-dot{ font-size:.72rem; } }
 
 .sub-block{ display:grid; gap:10px; }
 .sub-label{ margin:0; font-size:.76rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--brand-ink-soft); }
@@ -604,26 +644,32 @@ const css = `
 .sub-inline-date{ padding-left:26px; max-width:240px; }
 
 .sub-summary{
-  background:var(--brand-paper); border-top:1px solid var(--brand-line);
-  padding:24px; display:flex; flex-direction:column; gap:14px;
+  background:var(--card, var(--brand-surface));
+  border:1px solid var(--line, var(--brand-line));
+  border-radius:var(--r-lg, var(--radius-lg));
+  padding:20px; display:flex; flex-direction:column; gap:13px;
+  box-shadow:var(--sh-md, 0 12px 28px -12px color-mix(in srgb, var(--brand-ink) 18%, transparent));
 }
-@media (min-width:820px){ .sub-summary{ border-top:0; border-left:1px solid var(--brand-line); } }
-.sub-summary-kind{ margin:0; font-family:var(--brand-font-display); font-weight:600; font-size:.92rem; }
-.sub-summary-grid{ margin:0; display:grid; gap:8px; }
-.sub-summary-grid dt{ font-size:.72rem; color:var(--brand-ink-soft); }
-.sub-summary-grid dd{ margin:0; font-weight:600; font-size:.86rem; }
-.sub-price-row{ display:flex; align-items:baseline; justify-content:space-between; padding-top:10px; border-top:1px dashed var(--brand-line); font-size:.9rem; }
-.sub-price-row b{ font-family:var(--brand-font-display); font-size:1.15rem; }
-.sub-price-tag{ margin:0; font-size:.74rem; color:var(--brand-ink-soft); font-style:italic; }
+@media (min-width:900px){ .sub-summary{ position:sticky; top:74px; } }
+.sub-summary-kind{ margin:0; font-family:var(--display, var(--brand-font-display)); font-weight:700; font-size:1rem; letter-spacing:-.01em; }
+.sub-summary-item{ margin:-4px 0 0; font-size:.85rem; font-weight:600; color:var(--ink, var(--brand-ink)); }
+.sub-summary-grid{ margin:0; display:grid; gap:9px; padding:12px 0; border-top:1px solid var(--line, var(--brand-line)); border-bottom:1px solid var(--line, var(--brand-line)); }
+.sub-summary-grid > div{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.sub-summary-grid dt{ font-size:.72rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted, var(--brand-ink-soft)); }
+.sub-summary-grid dd{ margin:0; font-weight:600; font-size:.84rem; text-align:right; }
+.sub-price-row{ display:flex; align-items:baseline; justify-content:space-between; font-size:.9rem; }
+.sub-price-row b{ font-family:var(--display, var(--brand-font-display)); font-size:1.2rem; }
+.sub-price-tag{ margin:0; font-size:.74rem; color:var(--muted, var(--brand-ink-soft)); font-style:italic; }
 
 .sub-cta{
-  margin-top:4px; padding:13px 20px; border-radius:var(--radius); border:0;
-  background:var(--brand-accent); color:var(--brand-accent-ink); font-family:var(--brand-font-display);
-  font-weight:600; font-size:.94rem; cursor:pointer;
-  transition:filter var(--motion) var(--motion-ease);
+  margin-top:4px; padding:14px 20px; border-radius:var(--r, var(--radius)); border:0;
+  background:var(--brand, var(--brand-accent)); color:var(--on-brand, var(--brand-accent-ink));
+  font-family:var(--display, var(--brand-font-display)); font-weight:700; font-size:.95rem; cursor:pointer;
+  transition:filter var(--t), transform 140ms cubic-bezier(.2,.7,.3,1);
 }
-.sub-cta:hover{ filter:brightness(1.06); }
-.sub-cta:disabled{ opacity:.6; cursor:not-allowed; }
+.sub-cta:hover:not(:disabled){ filter:brightness(1.06); transform:translateY(-1px); }
+.sub-cta:disabled{ opacity:.55; cursor:not-allowed; }
 
-.bell-sub :is(button,input,select):focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
+.bell-sub :is(button,input,select):focus-visible{ outline:3px solid var(--brand, var(--brand-accent)); outline-offset:2px; }
+@media (prefers-reduced-motion:reduce){ .sub-cta:hover:not(:disabled){ transform:none; } .sub-days button[data-on="true"]{ transform:none; } }
 `;
