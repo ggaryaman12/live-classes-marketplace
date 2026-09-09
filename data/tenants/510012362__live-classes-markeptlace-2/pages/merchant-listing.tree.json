@@ -1,0 +1,37 @@
+{
+  "schema": "yelo.tree/1",
+  "page": "merchant-listing",
+  "root": "p1",
+  "nodes": {
+    "p1": {
+      "id": "p1",
+      "type": "Page",
+      "props": {},
+      "children": ["hero", "search", "myCourses"]
+    },
+    "hero": {
+      "id": "hero",
+      "type": "Custom",
+      "props": {
+        "component": "SearchHero",
+        "eyebrow": "Every class is a live video meeting with a real teacher",
+        "searchPlaceholder": "Search “Roblox”, “phonics”, “debate club”…"
+      }
+    },
+    "search": {
+      "id": "search",
+      "type": "Custom",
+      "props": {
+        "component": "ClassSearch",
+        "heading": "Live classes"
+      }
+    },
+    "myCourses": {
+      "id": "myCourses",
+      "type": "Custom",
+      "props": {
+        "component": "MyCoursesLink"
+      }
+    }
+  }
+}

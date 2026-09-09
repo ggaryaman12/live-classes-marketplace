@@ -1,0 +1,21 @@
+{
+  "schema": "yelo.tree/1",
+  "page": "my-subscriptions",
+  "root": "p1",
+  "nodes": {
+    "p1": {
+      "id": "p1",
+      "type": "Page",
+      "props": {},
+      "children": ["list"]
+    },
+    "list": {
+      "id": "list",
+      "type": "Custom",
+      "props": {
+        "component": "MySubscriptions",
+        "heading": "My enrolled courses"
+      }
+    }
+  }
+}

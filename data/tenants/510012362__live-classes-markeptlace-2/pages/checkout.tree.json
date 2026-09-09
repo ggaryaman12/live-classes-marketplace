@@ -1,0 +1,71 @@
+{
+  "schema": "yelo.tree/1",
+  "page": "checkout",
+  "root": "p1",
+  "nodes": {
+    "p1": {
+      "id": "p1",
+      "type": "Page",
+      "props": {},
+      "children": [
+        "enroll",
+        "recurringSummary",
+        "checkout1",
+        "bill",
+        "confirm"
+      ]
+    },
+    "enroll": {
+      "id": "enroll",
+      "type": "Custom",
+      "props": {
+        "component": "EnrollHeader",
+        "eyebrow": "Enrolling in one live session"
+      }
+    },
+    "recurringSummary": {
+      "id": "recurringSummary",
+      "type": "Custom",
+      "props": {
+        "component": "RecurringSummary",
+        "heading": "Your subscription"
+      }
+    },
+    "checkout1": {
+      "id": "checkout1",
+      "type": "Custom",
+      "props": {
+        "component": "ClassCheckout",
+        "title": "Confirm enrollment",
+        "paymentLabel": "How you’ll pay",
+        "summaryLabel": "Your enrollment",
+        "ctaLabel": "Confirm & enroll",
+        "allowCash": true,
+        "allowWallet": false
+      },
+      "bind": {
+        "source": "get_bill_breakdown"
+      }
+    },
+    "bill": {
+      "id": "bill",
+      "type": "BillBreakdown",
+      "props": {
+        "totalLabel": "Total due today",
+        "showTotal": true
+      },
+      "bind": {
+        "source": "get_bill_breakdown"
+      }
+    },
+    "confirm": {
+      "id": "confirm",
+      "type": "Custom",
+      "props": {
+        "component": "EnrollConfirm",
+        "previewHeading": "The moment you confirm",
+        "doneHeading": "Enrolled."
+      }
+    }
+  }
+}

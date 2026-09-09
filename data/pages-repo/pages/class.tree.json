@@ -1,0 +1,36 @@
+{
+  "schema": "yelo.tree/1",
+  "page": "class",
+  "root": "p1",
+  "nodes": {
+    "p1": {
+      "id": "p1",
+      "type": "Page",
+      "props": {},
+      "children": ["detail", "subscribe", "myCourses"]
+    },
+    "detail": {
+      "id": "detail",
+      "type": "Custom",
+      "props": {
+        "component": "ClassDetail",
+        "backLabel": "← All classes",
+        "browseHref": "/stores"
+      }
+    },
+    "subscribe": {
+      "id": "subscribe",
+      "type": "Custom",
+      "props": {
+        "component": "SubscribeScheduler"
+      }
+    },
+    "myCourses": {
+      "id": "myCourses",
+      "type": "Custom",
+      "props": {
+        "component": "MyCoursesLink"
+      }
+    }
+  }
+}
