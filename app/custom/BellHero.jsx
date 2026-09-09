@@ -1,79 +1,51 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 /**
- * BellHero — the landing hero, written for the STUDENT as the customer.
+ * BellHero — the landing hero for Bell, a marketplace of live online classes
+ * for kids. Depth is layered parallax (no WebGL): a back grain plane, a
+ * mid glow plane, and a slow-drifting ring of "video tile" cards standing in
+ * for a live class gathering before the bell. The headline assembles word by
+ * word on load; a sub-line reveals under a wipe mask as the hero scrolls.
  *
- * Layout family: split. Bold left-aligned question + an "I want to learn…"
- * search on the left; a layered collage of people learning on the right.
- * Depth is layered parallax (no WebGL): a back plane (organic accent shape),
- * a mid plane (the photos) and a front plane (floating chips) that move at
- * different rates with the pointer and a touch of scroll. The headline
- * assembles word by word; the photos rise in one after another and then
- * drift gently.
- *
- * Every colour comes from the theme tokens. Photos sit on token-derived
- * surfaces so both light and dark read correctly.
- *
- * prefers-reduced-motion: no parallax, no drift, no entrance — the collage and
- * headline are simply there, fully composed.
+ * prefers-reduced-motion: ring resolves to a static composed arrangement,
+ * headline shows immediately, no parallax, no drift.
  */
 
 const FONT_LINK =
   "https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600&display=swap";
 
-const img = (id, w, h) =>
-  `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=${w}&h=${h}&q=70`;
-
-const PHOTOS = [
-  {
-    key: "a",
-    src: img("1588072432836-e10032774350", 720, 900),
-    w: 720,
-    h: 900,
-    alt: "A child in glasses concentrating on a drawing at a busy classroom table",
-  },
-  {
-    key: "b",
-    src: img("1610484826967-09c5720778c7", 480, 480),
-    w: 480,
-    h: 480,
-    alt: "A student in headphones following a live class on a laptop",
-  },
-  {
-    key: "c",
-    src: img("1522202176988-66273c2fd55f", 760, 608),
-    w: 760,
-    h: 608,
-    alt: "Three learners laughing together over their laptops",
-  },
-  {
-    key: "d",
-    src: img("1571260899304-425eee4c7efc", 400, 400),
-    w: 400,
-    h: 400,
-    alt: "Students taking notes during a lesson",
-  },
+const TILES = [
+  { initial: "A", label: "Chess club", live: true, hue: "#2F6F7A" },
+  { initial: "M", label: "Story writing", hue: "#7A4A6B" },
+  { initial: "R", label: "Volcano science", hue: "#4E6B3A" },
+  { initial: "K", label: "Spanish games", hue: "#3E5C8A" },
+  { initial: "J", label: "Comic art", hue: "#8A6A1E" },
+  { initial: "S", label: "Coding: Scratch", hue: "#5C4A7A" },
+  { initial: "L", label: "Times tables", live: true, hue: "#8A5038" },
+  { initial: "D", label: "Nature journal", hue: "#2F6F7A" },
 ];
 
-const HEADLINE = ["What", "do", "you", "want", "to", "learn", "today?"];
-const EM_WORD = 5; // "learn"
+const HEADLINE = ["Live", "classes", "that", "meet", "your", "kid", "where", "they", "are."];
 
 export default function BellHero({
-  eyebrow = "Live online classes · real teachers",
-  searchPlaceholder = "I want to learn… chess, drawing, coding",
+  eyebrow = "Live online classes for curious kids",
+  searchPlaceholder = "Try “chess”, “creative writing”, “fractions”…",
   browseHref = "/stores",
 }) {
   const router = useRouter();
   const rootRef = useRef(null);
+  const ringRef = useRef(null);
+  const midRef = useRef(null);
+  const backRef = useRef(null);
   const [query, setQuery] = useState("");
   const [ready, setReady] = useState(false);
   const reduced = usePrefersReducedMotion();
 
-  // headline + collage assemble on mount
+  // headline assemble on mount
   useEffect(() => {
     const t = setTimeout(() => setReady(true), 60);
     return () => clearTimeout(t);
@@ -81,7 +53,7 @@ export default function BellHero({
 
   // load display + body fonts once
   useEffect(() => {
-    if (document.querySelector("link[data-bell-fonts]")) return;
+    if (document.querySelector('link[data-bell-fonts]')) return;
     const l = document.createElement("link");
     l.rel = "stylesheet";
     l.href = FONT_LINK;
@@ -89,47 +61,34 @@ export default function BellHero({
     document.head.appendChild(l);
   }, []);
 
-  // Pointer + scroll parallax: one rAF loop writes three CSS variables, and the
-  // three layers read them at different strengths (transform only). Paused
-  // while the hero is off-screen.
+  // pointer + scroll parallax via rAF
   useEffect(() => {
     if (reduced) return;
-    const el = rootRef.current;
-    if (!el) return;
     let raf = 0;
-    let visible = true;
     let px = 0, py = 0; // target
-    let cx = 0, cy = 0; // eased
+    let cx = 0, cy = 0; // current
     const onMove = (e) => {
-      const r = el.getBoundingClientRect();
-      if (!r.width) return;
+      const r = rootRef.current?.getBoundingClientRect();
+      if (!r) return;
       px = ((e.clientX - r.left) / r.width - 0.5) * 2;
       py = ((e.clientY - r.top) / r.height - 0.5) * 2;
-      px = Math.max(-1, Math.min(1, px));
-      py = Math.max(-1, Math.min(1, py));
     };
     const tick = () => {
-      if (visible) {
-        cx += (px - cx) * 0.07;
-        cy += (py - cy) * 0.07;
-        el.style.setProperty("--px", cx.toFixed(3));
-        el.style.setProperty("--py", cy.toFixed(3));
-        el.style.setProperty("--sy", String(Math.min(window.scrollY || 0, 700)));
-      }
+      cx += (px - cx) * 0.06;
+      cy += (py - cy) * 0.06;
+      const s = window.scrollY || 0;
+      if (backRef.current)
+        backRef.current.style.transform = `translate3d(${cx * 6}px, ${cy * 4 + s * 0.04}px, 0)`;
+      if (midRef.current)
+        midRef.current.style.transform = `translate3d(${cx * 16}px, ${cy * 12 + s * 0.09}px, 0)`;
+      if (ringRef.current)
+        ringRef.current.style.transform = `translate3d(${cx * 30}px, ${cy * 20 - s * 0.05}px, 0)`;
       raf = requestAnimationFrame(tick);
     };
-    const io =
-      typeof IntersectionObserver !== "undefined"
-        ? new IntersectionObserver(([entry]) => {
-            visible = entry.isIntersecting;
-          })
-        : null;
-    io?.observe(el);
     window.addEventListener("pointermove", onMove, { passive: true });
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
-      io?.disconnect();
       window.removeEventListener("pointermove", onMove);
     };
   }, [reduced]);
@@ -143,83 +102,94 @@ export default function BellHero({
     [query, router, browseHref]
   );
 
+  const ring = useMemo(() => {
+    // ellipse layout, back tiles pushed away + blurred for depth of field
+    return TILES.map((t, i) => {
+      const a = (i / TILES.length) * Math.PI * 2 - Math.PI / 2;
+      const x = 50 + Math.cos(a) * 40;
+      const y = 50 + Math.sin(a) * 34;
+      const depth = (Math.sin(a) + 1) / 2; // 0 back .. 1 front
+      return { ...t, x, y, depth, delay: i * 0.7 };
+    });
+  }, []);
+
   return (
     <section
       ref={rootRef}
       className="bell-hero"
       data-ready={ready}
-      aria-label="Find a live online class"
+      aria-label="Bell — live online classes for kids"
     >
+      <div ref={backRef} className="bh-plane bh-back" aria-hidden="true" />
+      <div ref={midRef} className="bh-plane bh-mid" aria-hidden="true">
+        <span className="bh-blob bh-blob-1" />
+        <span className="bh-blob bh-blob-2" />
+      </div>
+
+      <div ref={ringRef} className="bh-plane bh-ring" aria-hidden="true">
+        {ring.map((t, i) => (
+          <figure
+            key={i}
+            className="bh-tile"
+            data-live={t.live ? "yes" : "no"}
+            style={{
+              left: `${t.x}%`,
+              top: `${t.y}%`,
+              "--tile-hue": t.hue,
+              "--tile-depth": t.depth.toFixed(3),
+              "--tile-delay": `${t.delay}s`,
+            }}
+          >
+            <span className="bh-tile-face">{t.initial}</span>
+            <figcaption>
+              {t.live && <b className="bh-dot" aria-hidden="true" />}
+              {t.label}
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+
       <div className="bh-frame">
-        <div className="bh-copy">
-          <p className="bh-eyebrow">
-            <BellMark /> {eyebrow}
-          </p>
+        <p className="bh-eyebrow">
+          <BellMark /> {eyebrow}
+        </p>
 
-          <h1 className="bh-title">
-            {HEADLINE.map((w, i) => (
-              <span key={i} className="bh-word" style={{ "--i": i }}>
-                <span className={i === EM_WORD ? "bh-em" : undefined}>{w}</span>
-                {i < HEADLINE.length - 1 ? " " : ""}
-              </span>
-            ))}
-          </h1>
-
-          <p className="bh-sub">
-            Live classes with real teachers, in small groups, at a time that
-            fits you. Pick something you love and jump in.
-          </p>
-
-          <form className="bh-search" onSubmit={submit} role="search">
-            <label htmlFor="bell-hero-q" className="bh-visually-hidden">
-              Search live classes
-            </label>
-            <input
-              id="bell-hero-q"
-              type="search"
-              inputMode="search"
-              placeholder={searchPlaceholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              autoComplete="off"
-            />
-            <button type="submit">Find my class</button>
-          </form>
-
-          <p className="bh-reassure">
-            Times shown in your timezone · Join one session at a time ·{" "}
-            <Link href={browseHref}>Browse every class</Link>
-          </p>
-        </div>
-
-        <div className="bh-cluster">
-          <div className="bh-layer bh-back" aria-hidden="true">
-            <span className="bh-shape" />
-          </div>
-
-          <div className="bh-layer bh-mid">
-            {PHOTOS.map((p, i) => (
-              <figure key={p.key} className={`bh-photo bh-photo-${p.key}`} style={{ "--n": i }}>
-                <img
-                  src={p.src}
-                  alt={p.alt}
-                  width={p.w}
-                  height={p.h}
-                  loading={i === 0 ? "eager" : "lazy"}
-                  fetchPriority={i === 0 ? "high" : undefined}
-                  decoding="async"
-                />
-              </figure>
-            ))}
-          </div>
-
-          <div className="bh-layer bh-front" aria-hidden="true">
-            <span className="bh-chip bh-chip-1">
-              <i className="bh-chip-dot" /> Live with a real teacher
+        <h1 className="bh-title">
+          {HEADLINE.map((w, i) => (
+            <span key={i} className="bh-word" style={{ "--i": i }}>
+              <span>{w}</span>
+              {i < HEADLINE.length - 1 ? " " : ""}
             </span>
-            <span className="bh-chip bh-chip-2">Pick your own time</span>
-          </div>
-        </div>
+          ))}
+        </h1>
+
+        <p className="bh-sub">
+          <span className="bh-sub-inner">
+            Real teachers, small groups, a set time each week. Search by your
+            child’s age and the days that fit your family.
+          </span>
+        </p>
+
+        <form className="bh-search" onSubmit={submit} role="search">
+          <label htmlFor="bell-hero-q" className="bh-visually-hidden">
+            Search live classes
+          </label>
+          <input
+            id="bell-hero-q"
+            type="search"
+            inputMode="search"
+            placeholder={searchPlaceholder}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoComplete="off"
+          />
+          <button type="submit">Find a class</button>
+        </form>
+
+        <p className="bh-reassure">
+          Times shown in your timezone · Enroll in one session, not the whole
+          course · <Link href={browseHref}>Browse every class</Link>
+        </p>
       </div>
 
       <style>{css}</style>
@@ -263,24 +233,70 @@ function usePrefersReducedMotion() {
 const css = `
 .bell-hero{
   position:relative; isolation:isolate; overflow:hidden;
-  padding:44px 20px 56px;
+  min-height:min(88vh, 760px);
+  display:flex; align-items:center;
+  padding:96px 20px 72px;
   background:var(--brand-paper);
   color:var(--brand-ink);
   font-family:var(--brand-font-body);
   border-bottom:1px solid var(--brand-line);
 }
-@media (min-width:900px){ .bell-hero{ padding:84px 40px 92px; } }
+@media (min-width:820px){ .bell-hero{ padding:120px 32px 104px; } }
+
+.bh-plane{ position:absolute; inset:-8% -6%; z-index:0; will-change:transform; pointer-events:none; }
+.bh-back{
+  background:
+    radial-gradient(60% 55% at 50% 40%, color-mix(in srgb, var(--brand-accent-soft) 70%, transparent), transparent 70%);
+  filter:blur(6px);
+}
+.bh-mid{ }
+.bh-blob{ position:absolute; border-radius:50%; filter:blur(30px); opacity:.5; }
+.bh-blob-1{ width:42vw; max-width:420px; aspect-ratio:1; left:-6%; top:8%;
+  background:radial-gradient(circle, color-mix(in srgb, var(--brand-accent) 34%, transparent), transparent 70%); }
+.bh-blob-2{ width:36vw; max-width:360px; aspect-ratio:1; right:-4%; bottom:2%;
+  background:radial-gradient(circle, color-mix(in srgb, #2F6F7A 30%, transparent), transparent 70%); }
+
+.bh-ring{ z-index:1; }
+.bh-tile{
+  position:absolute; margin:0; transform:translate(-50%,-50%);
+  width:clamp(78px, 15vw, 132px);
+  opacity:calc(.34 + var(--tile-depth) * .62);
+  filter:blur(calc((1 - var(--tile-depth)) * 3px));
+  animation:bh-float 9s ease-in-out infinite;
+  animation-delay:var(--tile-delay);
+}
+.bh-tile-face{
+  display:flex; align-items:center; justify-content:center;
+  aspect-ratio:4/3; border-radius:var(--radius);
+  background:color-mix(in srgb, var(--tile-hue) 20%, var(--brand-surface));
+  border:1px solid color-mix(in srgb, var(--tile-hue) 42%, var(--brand-line));
+  color:color-mix(in srgb, var(--tile-hue) 62%, var(--brand-ink));
+  font-family:var(--brand-font-display); font-weight:600;
+  font-size:clamp(20px, 4vw, 32px);
+  box-shadow:0 10px 30px -14px color-mix(in srgb, var(--brand-ink) 40%, transparent);
+}
+.bh-tile figcaption{
+  display:flex; align-items:center; gap:5px;
+  margin-top:6px; font-size:11px; line-height:1.2;
+  color:var(--brand-ink-soft); font-weight:500;
+}
+.bh-dot{
+  width:6px; height:6px; border-radius:50%;
+  background:var(--brand-accent);
+  box-shadow:0 0 0 0 color-mix(in srgb, var(--brand-accent) 60%, transparent);
+  animation:bh-pulse 2.4s ease-out infinite;
+}
+@keyframes bh-float{ 0%,100%{ translate:0 0 } 50%{ translate:0 -12px } }
+@keyframes bh-pulse{
+  0%{ box-shadow:0 0 0 0 color-mix(in srgb, var(--brand-accent) 55%, transparent) }
+  70%{ box-shadow:0 0 0 9px transparent } 100%{ box-shadow:0 0 0 0 transparent }
+}
 
 .bh-frame{
   position:relative; z-index:2;
-  max-width:1180px; margin-inline:auto;
-  display:grid; gap:36px; align-items:center;
+  width:100%; max-width:760px; margin-inline:auto;
+  text-align:center;
 }
-@media (min-width:900px){
-  .bh-frame{ grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr); gap:56px; }
-}
-.bh-copy{ min-width:0; }
-
 .bh-eyebrow{
   display:inline-flex; align-items:center; gap:8px;
   margin:0 0 18px; padding:7px 14px;
@@ -293,144 +309,79 @@ const css = `
 
 .bh-title{
   font-family:var(--brand-font-display);
-  font-weight:700; letter-spacing:-.025em; line-height:1.02;
-  font-size:clamp(2.6rem, 9vw, 4.7rem);
+  font-weight:600; letter-spacing:-.02em; line-height:1.04;
+  font-size:clamp(2.4rem, 7.4vw, 4rem);
   margin:0 0 18px;
-  text-wrap:balance;
 }
-/* wrapper clips the rise; padding keeps descenders (y, g) from being cut */
-.bh-word{ display:inline-block; overflow:hidden; padding-bottom:.14em; margin-bottom:-.14em; }
+.bh-word{ display:inline-block; overflow:hidden; }
 .bh-word > span{
-  display:inline-block; position:relative;
-  transform:translateY(110%);
+  display:inline-block;
+  transform:translateY(105%);
   transition:transform .62s var(--motion-ease);
-  transition-delay:calc(var(--i) * 60ms + 90ms);
+  transition-delay:calc(var(--i) * 55ms + 90ms);
 }
 .bell-hero[data-ready="true"] .bh-word > span{ transform:translateY(0); }
-.bh-em{ color:var(--brand-accent); }
-.bh-em::after{
-  content:""; position:absolute; left:0; right:0; bottom:.06em; height:.15em;
-  border-radius:99px; background:color-mix(in srgb, var(--brand-accent) 30%, transparent);
-  transform-origin:left; transform:scaleX(0);
-  transition:transform .7s var(--motion-ease) .95s;
-}
-.bell-hero[data-ready="true"] .bh-em::after{ transform:scaleX(1); }
 
 .bh-sub{
-  max-width:38ch; margin:0 0 26px;
-  font-size:clamp(1.02rem, 2.4vw, 1.25rem); line-height:1.5;
+  max-width:34ch; margin:0 auto 26px;
+  font-size:clamp(1rem, 2.4vw, 1.24rem); line-height:1.5;
   color:var(--brand-ink-soft);
 }
+.bh-sub-inner{
+  display:inline-block;
+  clip-path:inset(0 100% 0 0);
+  transition:clip-path .9s var(--motion-ease) .3s;
+}
+.bell-hero[data-ready="true"] .bh-sub-inner{ clip-path:inset(0 0 0 0); }
 
 .bh-search{
   display:flex; gap:8px; flex-wrap:wrap;
-  max-width:560px; margin:0 0 16px;
+  max-width:520px; margin:0 auto 16px;
   padding:8px; border-radius:var(--radius-lg);
   background:var(--brand-surface);
   border:1px solid var(--brand-line);
   box-shadow:0 18px 44px -26px color-mix(in srgb, var(--brand-ink) 55%, transparent);
 }
 .bh-search input{
-  flex:1 1 220px; min-width:0; min-height:48px;
+  flex:1 1 220px; min-width:0;
   border:0; background:transparent; outline:none;
   padding:12px 12px; font-size:16px; font-family:inherit;
   color:var(--brand-ink);
 }
-.bh-search input::placeholder{ color:color-mix(in srgb, var(--brand-ink-soft) 85%, transparent); }
+.bh-search input::placeholder{ color:color-mix(in srgb, var(--brand-ink-soft) 80%, transparent); }
 .bh-search button{
-  flex:1 1 auto; min-height:48px;
+  flex:0 0 auto;
   border:0; border-radius:calc(var(--radius-lg) - 6px);
-  padding:12px 22px; font-size:15px; font-weight:650; font-family:var(--brand-font-display);
+  padding:12px 20px; font-size:15px; font-weight:600; font-family:var(--brand-font-display);
   background:var(--brand-accent); color:var(--brand-accent-ink);
-  cursor:pointer; touch-action:manipulation;
-  transition:filter var(--motion) var(--motion-ease), transform var(--motion) var(--motion-ease);
+  cursor:pointer; transition:filter var(--motion) var(--motion-ease), transform var(--motion) var(--motion-ease);
 }
-@media (min-width:480px){ .bh-search button{ flex:0 0 auto; } }
 .bh-search button:hover{ filter:brightness(1.06); }
 .bh-search button:active{ transform:translateY(1px); }
-/* Focus: no red border. The row gets a soft tint ring instead so keyboard
-   users can still see where they are; the input itself draws no outline. */
-.bh-search:focus-within{ box-shadow:0 0 0 4px color-mix(in srgb, var(--brand-accent) 14%, transparent), 0 18px 44px -26px color-mix(in srgb, var(--brand-ink) 55%, transparent); }
-.bh-search input:focus, .bh-search input:focus-visible{ outline:none; box-shadow:none; }
+.bh-search:focus-within{ border-color:var(--brand-accent); }
 
 .bh-reassure{
   margin:0; font-size:13px; color:var(--brand-ink-soft); line-height:1.6;
 }
 .bh-reassure a{ color:var(--brand-accent); text-decoration:underline; text-underline-offset:2px; font-weight:600; }
 
-/* ---------- collage: three parallax layers ---------- */
-.bh-cluster{
-  position:relative; width:100%; max-width:520px; margin-inline:auto;
-  aspect-ratio:1 / 1.02;
-}
-.bh-layer{ position:absolute; inset:0; will-change:transform; }
-.bh-back{ pointer-events:none; transform:translate3d(calc(var(--px,0) * -6px), calc(var(--py,0) * -4px + var(--sy,0) * .03px), 0); }
-.bh-mid{ pointer-events:none; transform:translate3d(calc(var(--px,0) * 12px), calc(var(--py,0) * 9px + var(--sy,0) * -.04px), 0); }
-.bh-front{ pointer-events:none; transform:translate3d(calc(var(--px,0) * 24px), calc(var(--py,0) * 16px + var(--sy,0) * -.08px), 0); }
-
-.bh-shape{
-  position:absolute; inset:6% 2% 0 8%;
-  border-radius:38% 62% 55% 45% / 48% 42% 58% 52%;
-  background:
-    radial-gradient(70% 70% at 30% 25%, color-mix(in srgb, var(--brand-accent) 22%, var(--brand-accent-soft)), var(--brand-accent-soft) 70%);
-}
-
-.bh-photo{
-  position:absolute; margin:0; overflow:hidden;
-  border-radius:var(--radius-lg);
-  border:4px solid var(--brand-surface);
-  background:var(--brand-accent-soft);
-  box-shadow:0 24px 50px -24px color-mix(in srgb, var(--brand-ink) 60%, transparent);
-  transform:rotate(var(--r, 0deg));
-  animation:
-    bh-rise .8s var(--motion-ease) calc(.25s + var(--n) * .14s) both,
-    bh-drift 9s ease-in-out calc(1.4s + var(--n) * .9s) infinite;
-}
-.bh-photo img{ display:block; width:100%; height:100%; object-fit:cover; }
-.bh-photo-a{ left:0;   top:5%;    width:57%; aspect-ratio:4 / 5; --r:-2.5deg; }
-.bh-photo-b{ right:1%; top:0;     width:40%; aspect-ratio:1;     --r:3deg; }
-.bh-photo-c{ right:0;  bottom:0;  width:58%; aspect-ratio:5 / 4; --r:2deg; }
-.bh-photo-d{ left:5%;  bottom:3%; width:34%; aspect-ratio:1;     --r:-4deg; }
-
-.bh-chip{
-  position:absolute; display:inline-flex; align-items:center; gap:7px;
-  padding:8px 13px; border-radius:980px;
-  background:var(--brand-surface); color:var(--brand-ink);
-  border:1px solid var(--brand-line);
-  font-size:13px; font-weight:650; line-height:1.2; white-space:nowrap;
-  box-shadow:0 12px 28px -14px color-mix(in srgb, var(--brand-ink) 55%, transparent);
-  animation:bh-rise .8s var(--motion-ease) 1s both;
-}
-.bh-chip-dot{ width:8px; height:8px; border-radius:50%; background:var(--brand-accent); flex:none; }
-.bh-chip-1{ left:-1%; top:50%; }
-.bh-chip-2{ right:2%; top:47%; animation-delay:1.15s; }
-@media (max-width:420px){
-  .bh-chip{ font-size:12px; padding:7px 10px; }
-  .bh-chip-1{ left:0; }
-  .bh-chip-2{ top:59%; }
-}
-
-@keyframes bh-rise{
-  from{ opacity:0; transform:translateY(26px) rotate(var(--r, 0deg)); }
-  to{ opacity:1; transform:translateY(0) rotate(var(--r, 0deg)); }
-}
-@keyframes bh-drift{ 0%,100%{ translate:0 0; } 50%{ translate:0 -9px; } }
-
-:where(.bell-hero) a:focus-visible,
-:where(.bell-hero) button:focus-visible{
-  outline:3px solid var(--brand-accent);
-  outline-offset:2px; border-radius:6px;
-}
-
 .bh-visually-hidden{
   position:absolute; width:1px; height:1px; padding:0; margin:-1px;
   overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
 }
 
+:where(.bell-hero) a:focus-visible,
+:where(.bell-hero) button:focus-visible,
+:where(.bell-hero) input:focus-visible{
+  outline:3px solid var(--brand-accent);
+  outline-offset:2px; border-radius:6px;
+}
+
 @media (prefers-reduced-motion: reduce){
-  .bh-layer{ transform:none !important; }
-  .bh-photo, .bh-chip{ animation:none; }
+  .bh-plane{ transform:none !important; }
+  .bh-tile{ animation:none; }
+  .bh-dot{ animation:none; }
   .bh-word > span{ transform:none; transition:none; }
-  .bh-em::after{ transform:scaleX(1); transition:none; }
+  .bh-sub-inner{ clip-path:none; transition:none; }
 }
 `;

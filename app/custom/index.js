@@ -12,19 +12,14 @@ import * as m_BellHero from './BellHero.jsx';
 import * as m_ClassCheckout from './ClassCheckout.jsx';
 import * as m_ClassDetail from './ClassDetail.jsx';
 import * as m_ClassSearch from './ClassSearch.jsx';
-import * as m_CreateAccount from './CreateAccount.jsx';
 import * as m_DatePicker from './DatePicker.jsx';
 import * as m_EnrollConfirm from './EnrollConfirm.jsx';
 import * as m_EnrollHeader from './EnrollHeader.jsx';
-import * as m_HeaderProfileMenu from './HeaderProfileMenu.jsx';
-import * as m_HippoChatLauncher from './HippoChatLauncher.jsx';
 import * as m_HowLiveWorks from './HowLiveWorks.jsx';
 import * as m_LiveCatalogue from './LiveCatalogue.jsx';
-import * as m_LiveClasses from './LiveClasses.jsx';
 import * as m_MeetTheInstructor from './MeetTheInstructor.jsx';
 import * as m_MyCoursesLink from './MyCoursesLink.jsx';
 import * as m_MySubscriptions from './MySubscriptions.jsx';
-import * as m_Profile from './Profile.jsx';
 import * as m_RecurringSummary from './RecurringSummary.jsx';
 import * as m_SearchHero from './SearchHero.jsx';
 import * as m_StartingThisWeek from './StartingThisWeek.jsx';
@@ -61,19 +56,14 @@ export const CUSTOM = Object.fromEntries(Object.entries({
   ClassCheckout: pick(m_ClassCheckout, 'ClassCheckout'),
   ClassDetail: pick(m_ClassDetail, 'ClassDetail'),
   ClassSearch: pick(m_ClassSearch, 'ClassSearch'),
-  CreateAccount: pick(m_CreateAccount, 'CreateAccount'),
   DatePicker: pick(m_DatePicker, 'DatePicker'),
   EnrollConfirm: pick(m_EnrollConfirm, 'EnrollConfirm'),
   EnrollHeader: pick(m_EnrollHeader, 'EnrollHeader'),
-  HeaderProfileMenu: pick(m_HeaderProfileMenu, 'HeaderProfileMenu'),
-  HippoChatLauncher: pick(m_HippoChatLauncher, 'HippoChatLauncher'),
   HowLiveWorks: pick(m_HowLiveWorks, 'HowLiveWorks'),
   LiveCatalogue: pick(m_LiveCatalogue, 'LiveCatalogue'),
-  LiveClasses: pick(m_LiveClasses, 'LiveClasses'),
   MeetTheInstructor: pick(m_MeetTheInstructor, 'MeetTheInstructor'),
   MyCoursesLink: pick(m_MyCoursesLink, 'MyCoursesLink'),
   MySubscriptions: pick(m_MySubscriptions, 'MySubscriptions'),
-  Profile: pick(m_Profile, 'Profile'),
   RecurringSummary: pick(m_RecurringSummary, 'RecurringSummary'),
   SearchHero: pick(m_SearchHero, 'SearchHero'),
   StartingThisWeek: pick(m_StartingThisWeek, 'StartingThisWeek'),

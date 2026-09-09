@@ -1,9 +1,8 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useCart } from "../lib/cart";
 
 /**
  * ClassDetail — the class page. Reads a real product id from the URL
@@ -29,7 +28,7 @@ const YELO_BASE = "https://test-api-3025.jungleworks.com";
 const YELO_TENANT = {
   marketplace_user_id: 510009445,
   marketplace_reference_id: "7a57517ff024ea5715497555a297e86c",
-  domain_name: "deliverecttest.devweb1.yelo.red",
+  domain_name: "deliverecttest.freelancer.jungleworks.me",
   dual_user_key: 0,
 };
 
@@ -106,7 +105,7 @@ const SESSIONS = [
 ];
 
 const DAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-const TABS = ["Description", "Available times", "Class details"];
+const TABS = ["Description", "Learning goals", "Class details", "Reviews"];
 
 function generateMeetings(session) {
   const start = new Date(`${session.startDate}T00:00:00`);
@@ -136,14 +135,7 @@ function fmtTime(hhmm, len) {
 }
 
 function mapRealProduct(p) {
-  // The Description tab shows the LONG description specifically — verified
-  // live (product/view for a real product) that `long_description` and
-  // `description` are two separate real fields, not a fallback pair: the
-  // short `description` is the one-liner used in listing cards/tiles
-  // elsewhere, `long_description` is the fuller write-up meant for this tab.
-  // Falls back to the short one only if a product genuinely has no long
-  // description set.
-  const desc = (p.long_description && p.long_description.trim()) || (p.description && p.description.trim()) || "";
+  const desc = (p.description && p.description.trim()) || (p.long_description && p.long_description.trim()) || "";
   const name = p.name || "Untitled class";
   const term = encodeURIComponent(`${name}, class`);
   return {
@@ -175,8 +167,6 @@ function ClassDetailInner({
   browseHref = "/stores",
 }) {
   const params = useSearchParams();
-  const router = useRouter();
-  const { items: cartItems, add, setQty } = useCart();
   const id = params.get("id");
 
   const [tab, setTab] = useState(TABS[0]);
@@ -184,27 +174,6 @@ function ClassDetailInner({
   const [expanded, setExpanded] = useState({});
   const [tz, setTz] = useState("your local time");
   const [cls, setCls] = useState(id ? null : SAMPLE_CLASS);
-  const [cartBlockedMsg, setCartBlockedMsg] = useState("");
-  // Instant tap feedback: opening checkout can take a moment on a phone/tablet
-  // (first visit to a route), and a button that shows nothing reads as broken.
-  const [enrolling, setEnrolling] = useState(false);
-  useEffect(() => {
-    if (!enrolling) return;
-    const t = setTimeout(() => setEnrolling(false), 8000);
-    return () => clearTimeout(t);
-  }, [enrolling]);
-
-  // A one-class-per-order block is a transient thing that just happened, not
-  // a persistent page state — a toast reads as "here's what just happened"
-  // and gets out of the way; the old static paragraph sat under the title
-  // until the next click, competing with the actual class info for
-  // attention. Auto-dismisses; a manual close is still there for anyone who
-  // wants it gone sooner.
-  useEffect(() => {
-    if (!cartBlockedMsg) return;
-    const t = setTimeout(() => setCartBlockedMsg(""), 5000);
-    return () => clearTimeout(t);
-  }, [cartBlockedMsg]);
 
   useEffect(() => {
     if (!document.querySelector("link[data-bell-fonts]")) {
@@ -252,37 +221,6 @@ function ClassDetailInner({
     };
   }, [id]);
 
-  // The fixed Enroll bar owns the bottom edge below 900px. The site's floating
-  // "My courses" / "Chat with us" buttons read --float-lift, so measure the
-  // bar's REAL height (it varies with safe-area insets, font scaling, wrap)
-  // and lift them clear of it. Removed again on leave / at desktop width.
-  const clsReady = !!cls;
-  useEffect(() => {
-    if (!clsReady) return;
-    const root = document.documentElement;
-    const bar = document.querySelector(".cd-mobilebar");
-    if (!bar) return;
-    const apply = () => {
-      const h = bar.offsetHeight;
-      if (h > 0 && getComputedStyle(bar).display !== "none") {
-        root.style.setProperty("--float-lift", `${h + 12}px`);
-      } else {
-        root.style.removeProperty("--float-lift");
-      }
-    };
-    apply();
-    window.addEventListener("resize", apply);
-    window.addEventListener("orientationchange", apply);
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(apply) : null;
-    ro?.observe(bar);
-    return () => {
-      window.removeEventListener("resize", apply);
-      window.removeEventListener("orientationchange", apply);
-      ro?.disconnect();
-      root.style.removeProperty("--float-lift");
-    };
-  }, [clsReady]);
-
   const meetingsBySession = useMemo(() => {
     const map = {};
     for (const s of SESSIONS) map[s.id] = generateMeetings(s);
@@ -303,40 +241,6 @@ function ClassDetailInner({
   const enrollHref = cls.productId
     ? (sessId) => `/checkout?product=${cls.productId}&session=${sessId}`
     : (sessId) => `/checkout?class=${encodeURIComponent(cls.title)}&session=${sessId}`;
-
-  // Real fix: this class used to only land in the cart once the checkout
-  // page's own scheduler mounted and ran its own add — meaning "Enroll"
-  // navigated to a checkout screen with an EMPTY cart for a beat, and if
-  // that page's own add never fired for some reason, nothing was ever really
-  // in the cart at all. Add it right here, at the actual click, so the cart
-  // reflects the choice the instant it's made — matching how the cart drawer
-  // itself (and "Go to checkout") already expect a real item to be there.
-  // `setQty(...,1)` after `add()` for the same reason SubscribeScheduler.jsx
-  // forces it: repeat clicks must never silently stack quantity nobody
-  // chose.
-  function enrollNow(target) {
-    if (enrolling) return;
-    if (!cls.productId) {
-      if (target) router.push(target);
-      return;
-    }
-    // Per instruction: one class per order, always — the same rule enforced
-    // in the cart drawer and the store's catalogue. A different class
-    // already in the cart blocks this one rather than silently adding
-    // alongside it.
-    if (cartItems.length > 0 && cartItems.some((it) => it.id !== cls.productId)) {
-      setCartBlockedMsg("This teacher only accepts one class per order — clear your cart before enrolling in this class.");
-      return;
-    }
-    setCartBlockedMsg("");
-    add(
-      { id: cls.teacherId, name: cls.teacher },
-      { id: cls.productId, name: cls.title, price: cls.price, image: cls.img }
-    );
-    setQty(cls.productId, 1);
-    setEnrolling(true);
-    router.push(target || `/checkout?product=${cls.productId}`);
-  }
 
   return (
     <section className="bell-cd" aria-label={cls.title}>
@@ -414,87 +318,36 @@ function ClassDetailInner({
                   {cls.desc || "No description added for this class yet."}
                 </p>
               )}
-              {tab === "Available times" && (
-                <div className="cd-times" id="available-times">
-                  <div className="cd-times-head">
-                    <h2>Available times <span>({SESSIONS.length} available)</span></h2>
-                    <span className="cd-tz-chip">🌐 {tz}</span>
-                  </div>
-                  <p className="cd-times-note">Sample sessions — real per-class scheduling is on its way.</p>
-
-                  <ul className="cd-sessions">
-                    {SESSIONS.map((s) => {
-                      const meetings = meetingsBySession[s.id] || [];
-                      const seatsLeft = s.seatsTotal - s.seatsFilled;
-                      const full = seatsLeft <= 0;
-                      const low = !full && seatsLeft <= 2;
-                      const open = !!expanded[s.id];
-                      const first = meetings[0];
-                      const last = meetings[meetings.length - 1];
-                      return (
-                        <li key={s.id} className="cd-session">
-                          <div className="cd-session-when">
-                            <p className="cd-session-days">{s.days.join(", ")}</p>
-                            <p className="cd-session-time">
-                              {first ? fmtDate(first) : ""}, {fmtTime(s.time, s.len)}
-                            </p>
-                          </div>
-                          <div className="cd-session-status">
-                            <p><span aria-hidden="true">⏳</span> Started {first ? fmtDate(first) : "—"}</p>
-                            <p>Ends {last ? fmtDate(last) : "—"}</p>
-                            <button
-                              type="button"
-                              className="cd-show-more"
-                              onClick={() => setExpanded((e) => ({ ...e, [s.id]: !e[s.id] }))}
-                              aria-expanded={open}
-                            >
-                              {open ? "Hide" : "Show"} remaining {Math.max(0, meetings.length - 1)} meetings
-                            </button>
-                            {open && (
-                              <ul className="cd-meeting-list">
-                                {meetings.slice(1).map((m, i) => (
-                                  <li key={i}>{m.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                          <div className="cd-session-seats">
-                            <p>{s.seatsFilled} seat{s.seatsFilled === 1 ? "" : "s"} filled</p>
-                            {low && <p className="cd-seats-low">Only {seatsLeft} seat{seatsLeft === 1 ? "" : "s"} left!</p>}
-                            {full && <p className="cd-seats-low">Full — join the waitlist</p>}
-                          </div>
-                          {full ? (
-                            <Link href={enrollHref(s.id)} className="cd-join" data-full={full}>
-                              Join waitlist
-                            </Link>
-                          ) : (
-                            <button
-                              type="button"
-                              className="cd-join"
-                              onClick={() => enrollNow(enrollHref(s.id))}
-                            >
-                              Enroll — Week 1
-                            </button>
-                          )}
-                        </li>
-                      );
-                    })}
+              {tab === "Learning goals" && (
+                cls.isSample ? (
+                  <ul className="cd-goals">
+                    {cls.goals.map((g) => <li key={g}>{g}</li>)}
                   </ul>
-                </div>
+                ) : (
+                  <p className="cd-placeholder">This teacher hasn't listed specific learning goals for this class yet.</p>
+                )
               )}
               {tab === "Class details" && (
                 cls.isSample ? (
                   <ul className="cd-goals">
                     <li>{cls.group}, ages {cls.age[0]}–{cls.age[1]}</li>
                     <li>Live video meetings, {SESSIONS[0].len} minutes each</li>
-                    <li>New sessions start most weeks — see the Available times tab</li>
+                    <li>New sessions start most weeks — see Available times below</li>
                   </ul>
                 ) : (
                   <ul className="cd-goals">
                     <li>Taught by {cls.teacher}</li>
                     <li>₹{cls.price.toLocaleString()} per session</li>
+                    <li>See Available times below for sample scheduling — real session times are on their way</li>
                   </ul>
                 )
+              )}
+              {tab === "Reviews" && (
+                <p className="cd-placeholder">
+                  Review writing is arriving in a later pass — only parents with a
+                  completed first meeting will be able to leave one, one per
+                  enrollment.
+                </p>
               )}
             </div>
 
@@ -535,11 +388,79 @@ function ClassDetailInner({
                 )}
               </>
             )}
+
+            <div className="cd-times" id="available-times">
+              <div className="cd-times-head">
+                <h2>Available times <span>({SESSIONS.length} available)</span></h2>
+                <span className="cd-tz-chip">🌐 {tz}</span>
+              </div>
+              <p className="cd-times-note">Sample sessions — real per-class scheduling is on its way.</p>
+
+              <ul className="cd-sessions">
+                {SESSIONS.map((s) => {
+                  const meetings = meetingsBySession[s.id] || [];
+                  const seatsLeft = s.seatsTotal - s.seatsFilled;
+                  const full = seatsLeft <= 0;
+                  const low = !full && seatsLeft <= 2;
+                  const open = !!expanded[s.id];
+                  const first = meetings[0];
+                  const last = meetings[meetings.length - 1];
+                  return (
+                    <li key={s.id} className="cd-session">
+                      <div className="cd-session-when">
+                        <p className="cd-session-days">{s.days.join(", ")}</p>
+                        <p className="cd-session-time">
+                          {first ? fmtDate(first) : ""}, {fmtTime(s.time, s.len)}
+                        </p>
+                      </div>
+                      <div className="cd-session-status">
+                        <p><span aria-hidden="true">⏳</span> Started {first ? fmtDate(first) : "—"}</p>
+                        <p>Ends {last ? fmtDate(last) : "—"}</p>
+                        <button
+                          type="button"
+                          className="cd-show-more"
+                          onClick={() => setExpanded((e) => ({ ...e, [s.id]: !e[s.id] }))}
+                          aria-expanded={open}
+                        >
+                          {open ? "Hide" : "Show"} remaining {Math.max(0, meetings.length - 1)} meetings
+                        </button>
+                        {open && (
+                          <ul className="cd-meeting-list">
+                            {meetings.slice(1).map((m, i) => (
+                              <li key={i}>{m.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                      <div className="cd-session-seats">
+                        <p>{s.seatsFilled} seat{s.seatsFilled === 1 ? "" : "s"} filled</p>
+                        {low && <p className="cd-seats-low">Only {seatsLeft} seat{seatsLeft === 1 ? "" : "s"} left!</p>}
+                        {full && <p className="cd-seats-low">Full — join the waitlist</p>}
+                      </div>
+                      <Link
+                        href={enrollHref(s.id)}
+                        className="cd-join"
+                        data-full={full}
+                      >
+                        {full ? "Join waitlist" : "Enroll — Week 1"}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <div className="cd-request">
+                <p>Don't see a time that works?</p>
+                <button type="button" disabled aria-disabled="true" title="Direct requests aren't available yet">
+                  Request another time — soon
+                </button>
+              </div>
+            </div>
           </div>
 
           <aside className="cd-side" aria-label="Enroll in this class">
             <div className="cd-side-card">
-              <p className="cd-side-kind">Live 1:1 classes</p>
+              <p className="cd-side-kind">Live group class</p>
               <p className="cd-side-price">
                 <b>₹{cls.price.toLocaleString()}</b> <i>per session</i>
               </p>
@@ -556,22 +477,7 @@ function ClassDetailInner({
               ) : (
                 <p className="cd-side-total">Taught by {cls.teacher}</p>
               )}
-              {cls.productId ? (
-                <button type="button" className="cd-side-primary" onClick={() => enrollNow()} disabled={enrolling}>
-                  {enrolling ? "Opening checkout…" : "Enroll now"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="cd-side-cta"
-                  onClick={() => {
-                    setTab("Available times");
-                    document.getElementById("available-times")?.scrollIntoView({ behavior: "smooth" });
-                  }}
-                >
-                  See all available times
-                </button>
-              )}
+              <a className="cd-side-cta" href="#available-times">See all available times</a>
             </div>
           </aside>
         </div>
@@ -581,29 +487,8 @@ function ClassDetailInner({
         <div>
           <b>₹{cls.price.toLocaleString()}</b> <span>/ session</span>
         </div>
-        {cls.productId ? (
-          <button type="button" onClick={() => enrollNow()} disabled={enrolling}>
-            {enrolling ? "Opening…" : "Enroll now"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setTab("Available times");
-              document.getElementById("available-times")?.scrollIntoView({ behavior: "smooth" });
-            }}
-          >
-            See times
-          </button>
-        )}
+        <a href="#available-times">See times</a>
       </div>
-
-      {cartBlockedMsg && (
-        <div className="cd-toast" role="alert">
-          <span>{cartBlockedMsg}</span>
-          <button type="button" onClick={() => setCartBlockedMsg("")} aria-label="Dismiss">×</button>
-        </div>
-      )}
 
       <style>{css}</style>
     </section>
@@ -719,7 +604,7 @@ const css = `
 .cd-seats-low{ color:var(--brand-accent) !important; font-weight:600; }
 .cd-join{
   display:inline-flex; align-items:center; justify-content:center; white-space:nowrap;
-  padding:11px 18px; border-radius:var(--radius); border:0; cursor:pointer;
+  padding:11px 18px; border-radius:var(--radius);
   background:var(--brand-accent); color:var(--brand-accent-ink);
   font-family:var(--brand-font-display); font-weight:600; font-size:.9rem; text-decoration:none;
   transition:filter var(--motion) var(--motion-ease);
@@ -745,30 +630,9 @@ const css = `
 .cd-side-price i{ font-style:normal; color:var(--brand-ink-soft); font-size:.84rem; }
 .cd-side-total{ margin:0 0 16px; color:var(--brand-ink-soft); font-size:.82rem; }
 .cd-side-facts{ list-style:none; margin:0 0 18px; padding:14px 0 0; border-top:1px solid var(--brand-line); display:grid; gap:10px; font-size:.86rem; }
-.cd-side-primary{
-  display:block; width:100%; text-align:center; padding:13px; border-radius:var(--radius); margin-bottom:10px;
-  border:0; cursor:pointer;
-  background:var(--brand-accent); color:var(--brand-accent-ink);
-  font-family:var(--brand-font-display); font-weight:600; font-size:.92rem; text-decoration:none;
-  transition:filter var(--motion) var(--motion-ease);
-}
-.cd-side-primary:hover{ filter:brightness(1.06); }
-.cd-toast{
-  position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
-  z-index:60; display:flex; align-items:center; gap:14px; max-width:min(92vw,440px);
-  padding:13px 16px; border-radius:var(--radius); background:#c0392b; color:#fff;
-  font-family:var(--brand-font-body); font-size:.86rem; line-height:1.4;
-  box-shadow:0 12px 30px -10px color-mix(in srgb, #c0392b 60%, transparent);
-  animation:cd-toast-in .25s var(--motion-ease);
-}
-.cd-toast button{ flex:none; background:none; border:0; color:#fff; font-size:18px; line-height:1; cursor:pointer; opacity:.85; }
-.cd-toast button:hover{ opacity:1; }
-@media (max-width:899px){ .cd-toast{ bottom:88px; } }
-@keyframes cd-toast-in{ from{ opacity:0; transform:translate(-50%,10px); } to{ opacity:1; transform:translate(-50%,0); } }
-@media (prefers-reduced-motion: reduce){ .cd-toast{ animation:none; } }
 .cd-side-cta{
-  display:block; width:100%; text-align:center; padding:13px; border-radius:var(--radius); border:0;
-  background:var(--brand-accent-soft); color:var(--brand-accent); cursor:pointer;
+  display:block; text-align:center; padding:13px; border-radius:var(--radius);
+  background:var(--brand-accent-soft); color:var(--brand-accent);
   font-family:var(--brand-font-display); font-weight:600; font-size:.9rem; text-decoration:none;
 }
 [data-theme="dark"] .cd-side-cta{ color:var(--brand-ink); }
@@ -776,7 +640,7 @@ const css = `
 
 .cd-mobilebar{
   display:flex; align-items:center; justify-content:space-between; gap:16px;
-  position:fixed; left:0; right:0; bottom:0; z-index:40;
+  position:fixed; left:0; right:0; bottom:0; z-index:20;
   padding:12px 16px calc(12px + env(safe-area-inset-bottom));
   background:var(--brand-surface); border-top:1px solid var(--brand-line);
   box-shadow:0 -12px 30px -20px color-mix(in srgb, var(--brand-ink) 45%, transparent);
@@ -784,13 +648,11 @@ const css = `
 @media (min-width:900px){ .cd-mobilebar{ display:none; } }
 .cd-mobilebar b{ font-family:var(--brand-font-display); font-size:1.1rem; }
 .cd-mobilebar span{ color:var(--brand-ink-soft); font-size:.8rem; }
-.cd-mobilebar a, .cd-mobilebar button{
-  min-height:44px; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
-  padding:11px 20px; border-radius:var(--radius); border:0; cursor:pointer;
+.cd-mobilebar a{
+  padding:11px 20px; border-radius:var(--radius);
   background:var(--brand-accent); color:var(--brand-accent-ink);
   font-family:var(--brand-font-display); font-weight:600; text-decoration:none; font-size:.9rem;
 }
-.cd-mobilebar button:disabled, .cd-side-primary:disabled{ opacity:.7; cursor:default; }
 @media (max-width:899px){ .bell-cd{ padding-bottom:96px; } }
 
 .bell-cd :is(a,button):focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }

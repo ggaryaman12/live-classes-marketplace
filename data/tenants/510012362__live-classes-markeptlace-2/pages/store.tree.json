@@ -8,23 +8,35 @@
       "type": "Page",
       "props": {},
       "children": [
+        "header1",
         "meetInstructor",
         "approach",
+        "upcoming",
         "cat1",
         "reviews",
         "faq",
         "trust",
-        "chat"
+        "myCourses"
       ]
+    },
+    "header1": {
+      "id": "header1",
+      "type": "StoreHeader",
+      "props": {
+        "showRating": true,
+        "showDelivery": false,
+        "backLabel": "← All teachers"
+      },
+      "bind": {
+        "source": "store"
+      }
     },
     "meetInstructor": {
       "id": "meetInstructor",
       "type": "Custom",
       "props": {
         "component": "MeetTheInstructor",
-        "heading": "Meet the instructor",
-        "backLabel": "← All teachers",
-        "browseHref": "/"
+        "heading": "Meet the instructor"
       }
     },
     "approach": {
@@ -34,6 +46,14 @@
         "component": "TeacherApproach",
         "eyebrow": "How a class runs",
         "statement": "Live means a real teacher, a set time each week, and a room small enough that your child is seen."
+      }
+    },
+    "upcoming": {
+      "id": "upcoming",
+      "type": "Custom",
+      "props": {
+        "component": "UpcomingClasses",
+        "heading": "Upcoming live classes"
       }
     },
     "cat1": {
@@ -69,11 +89,11 @@
         "browseHref": "/stores"
       }
     },
-    "chat": {
-      "id": "chat",
+    "myCourses": {
+      "id": "myCourses",
       "type": "Custom",
       "props": {
-        "component": "HippoChatLauncher"
+        "component": "MyCoursesLink"
       }
     }
   }

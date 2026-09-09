@@ -10,11 +10,12 @@
       "children": [
         "hero",
         "subjects",
+        "week",
         "how",
         "teachersLede",
         "grid",
         "trust",
-        "chat"
+        "myCourses"
       ]
     },
     "hero": {
@@ -22,8 +23,8 @@
       "type": "Custom",
       "props": {
         "component": "BellHero",
-        "eyebrow": "Live online classes · real teachers",
-        "searchPlaceholder": "I want to learn… chess, drawing, coding",
+        "eyebrow": "Live online classes for curious kids",
+        "searchPlaceholder": "Try “chess”, “creative writing”, “fractions”…",
         "browseHref": "/stores"
       }
     },
@@ -34,6 +35,15 @@
         "component": "SubjectTiles",
         "heading": "Browse by category",
         "subhead": "What this teacher network actually offers right now, pulled live from the marketplace.",
+        "browseHref": "/stores"
+      }
+    },
+    "week": {
+      "id": "week",
+      "type": "Custom",
+      "props": {
+        "component": "StartingThisWeek",
+        "heading": "Starting this week",
         "browseHref": "/stores"
       }
     },
@@ -73,11 +83,11 @@
         "classHref": "/p/class"
       }
     },
-    "chat": {
-      "id": "chat",
+    "myCourses": {
+      "id": "myCourses",
       "type": "Custom",
       "props": {
-        "component": "HippoChatLauncher"
+        "component": "MyCoursesLink"
       }
     }
   }

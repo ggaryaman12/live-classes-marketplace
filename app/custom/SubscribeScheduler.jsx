@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCart } from "../lib/cart";
 import { getSession } from "../lib/session";
@@ -47,26 +46,13 @@ import DatePicker from "./DatePicker";
  * to dodge CORS and keep the tenant envelope server-side) and adding one is
  * outside this workspace, so actually creating the recurring order isn't
  * wired from here yet — everything up to and including the real bill is.
- *
- * NOT EVERY REAL CLASS IS RECURRING-ENABLED — confirmed live: merchant "QA X"
- * (user_id 510013303, the same store used above) also sells plain, one-time
- * classes under its "Maths" category (e.g. product_id 11670768, "Maths (Age
- * 5-10)", is_recurring_enabled: 0). This component is stage 1 of the checkout
- * page; a non-recurring product has no schedule to pick, but it still needs
- * to reach the cart somehow, or checkout shows nothing at all — no item, no
- * schedule section, nothing to click (a real bug this fixes: enrolling in
- * that exact product used to leave checkout completely blank). So a
- * non-recurring product is added to the cart automatically and quietly here
- * (`OneTimeAutoEnroll`, no picker UI — there is nothing to schedule), and
- * ClassCheckout's own already-working one-time-order flow takes it from
- * there. Recurring products still get the full picker below.
  */
 
 const YELO_BASE = "https://test-api-3025.jungleworks.com";
 const YELO_TENANT = {
   marketplace_user_id: 510009445,
   marketplace_reference_id: "7a57517ff024ea5715497555a297e86c",
-  domain_name: "deliverecttest.devweb1.yelo.red",
+  domain_name: "deliverecttest.freelancer.jungleworks.me",
   dual_user_key: 0,
   language: "en",
 };
@@ -89,16 +75,6 @@ const PRESETS = [
   { key: "fortnight", label: "Fortnight", days: null, cycle: 15 },
   { key: "monthly", label: "Monthly", days: null, cycle: 30 },
 ];
-// Shared by both places this file can decline to add to the cart — one
-// class per order, always (see the blockedByCartRule note below).
-const cartBlockCss = `
-.sub-cart-block{
-  max-width:640px; margin:0 auto; padding:16px 18px; border-radius:var(--radius-lg, 12px);
-  background:color-mix(in srgb, #c0392b 10%, var(--brand-paper)); border:1px solid #c0392b;
-  color:var(--brand-ink); font-family:var(--brand-font-body); font-size:.92rem; line-height:1.5;
-}
-.sub-cart-block p{ margin:0; }
-`;
 // Same rule the real webapp applies when building its interval list
 // (recurring-tasks.component.ts: `if (!moment().isAfter(current))`) — a slot
 // only appears if it hasn't already passed. For today that trims the
@@ -120,50 +96,25 @@ function buildFallbackTimes(dateISO) {
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
-
-// THE REAL BUG behind "I picked N sessions but it's billing a different
-// number": confirmed live, repeatedly, against get_bill_breakdown itself
-// (and traced to its source, yelo-server routes/v2/customer_open_apis.js).
-// The backend derives an end date as `start + occurrence_count days`
-// (dateUtility.addDays) and then counts every day_array-matching date from
-// start to that end date INCLUSIVE OF BOTH ENDS (dateUtility.
-// getDatesBetweenDatesWithCycleType — `while (currentDate <= stopDate)`).
-// That means the real returned count depends on whether the END of that
-// window happens to land on a day the parent actually selected — which
-// isn't a fixed "+1": "Everyday" (all 7 days) always overcounts by exactly
-// one; a 6-day custom pick starting on a day the range's tail also matches
-// can undercount instead (this is exactly what going from Tuesday-start to
-// Thursday-start "fixed itself" earlier — different tail day, different
-// error, same underlying bug). A per-preset fudge factor can't cover every
-// combination, so this walks the SAME calendar the backend does, from the
-// real start date, counting only the parent's actual selected weekdays,
-// until it reaches the requested count — then sends the backend the number
-// of days between start and that date, which is provably the value that
-// makes the backend's own inclusive count land exactly on target. Verified
-// live against three different real day_array/start combinations (everyday,
-// weekdays, a 6-day custom pick with Wednesday excluded) — each came back
-// with the exact requested occurrence count once compensated. cycle_type
-// (Fortnight/Monthly) steps through dates completely differently on the
-// backend (14/30-day jumps, not weekday matching), so this compensation
-// only applies when cycle_type is 0 — those two presets are sent as chosen,
-// unverified for the same fix.
-function occurrenceCountToSend(startISO, dayArray, desiredCount) {
-  const n = Number(desiredCount);
-  const start = startISO ? new Date(`${startISO}T00:00:00`) : null;
-  if (!dayArray?.length || !Number.isFinite(n) || n <= 0 || !start || isNaN(start.getTime())) {
-    return desiredCount;
-  }
-  const daySet = new Set(dayArray);
-  const cursor = new Date(start);
-  let matches = 0;
+function addDaysISO(iso, n) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function countOccurrences(startISO, endISO, dayIds) {
+  if (!dayIds.length) return 0;
+  const start = new Date(`${startISO}T00:00:00`);
+  const end = new Date(`${endISO}T00:00:00`);
+  if (end < start) return 0;
+  let n = 0;
+  const cur = new Date(start);
   let guard = 0;
-  while (matches < n && guard < 3660) {
-    if (daySet.has(cursor.getDay())) matches++;
-    if (matches === n) break;
-    cursor.setDate(cursor.getDate() + 1);
+  while (cur <= end && guard < 1000) {
     guard++;
+    if (dayIds.includes(cur.getDay())) n++;
+    cur.setDate(cur.getDate() + 1);
   }
-  return Math.round((cursor - start) / 86400000);
+  return n;
 }
 
 export default function SubscribeScheduler() {
@@ -183,100 +134,8 @@ export default function SubscribeScheduler() {
  */
 function SubscribeSchedulerInner() {
   const params = useSearchParams();
-  const router = useRouter();
-  const cart = useCart();
-  // This scheduler is stage 1 of the checkout page. The class id arrives as
-  // `product` there (and as `id` when linked from anywhere else).
-  const id = params.get("id") || params.get("product");
+  const id = params.get("id");
   const [product, setProduct] = useState(null);
-
-  const confirmed = ["order", "order_id", "job_id", "rule_id", "enrolled"].some((k) => params.get(k));
-
-  // "Clear cart" lives in the site's shared cart drawer (outside this
-  // tenant's own files, same boundary as "Go to checkout") — there's no file
-  // there to add an on-clear redirect to directly. This gets the same real
-  // outcome by watching the actual cart state instead: if it goes from
-  // having something in it to genuinely empty while a parent is on this
-  // page, that's a real clear (not the page simply loading with nothing in
-  // the cart yet, which `cart.ready` plus the "had items at least once"
-  // guard both rule out), so it's correct to send them back to browse.
-  const hadCartItems = useRef(false);
-  useEffect(() => {
-    if (!cart.ready) return;
-    if (cart.items.length > 0) {
-      hadCartItems.current = true;
-      return;
-    }
-    if (hadCartItems.current) {
-      hadCartItems.current = false;
-      router.push("/stores");
-    }
-  }, [cart.ready, cart.items.length, router]);
-
-  // THE BUG THIS CATCHES: the cart's own "Go to checkout" button (shared site
-  // chrome, not built here) just sends the browser to bare `/checkout` — no
-  // `product` id, no schedule. That's fine for a one-time class (nothing to
-  // schedule), but a recurring-enabled class landed here with the payment
-  // step rendering directly, no schedule ever chosen, and no day_array/
-  // schedule_time on the eventual order — a real subscription silently
-  // placed as a single one-off booking. Only fires when there is genuinely no
-  // explicit id AND exactly one item in the cart (a second item means this
-  // can't safely guess which one to schedule, so it's left to the existing
-  // one-time path rather than guessing wrong).
-  useEffect(() => {
-    if (id || confirmed || cart.items.length !== 1) return;
-    let cancelled = false;
-    const cartProductId = cart.items[0].id;
-    // ClassCheckout.jsx waits on `hasSchedule` before showing anything real
-    // whenever it can't yet tell "one-time, arrived via the cart" apart from
-    // "recurring, still needs a schedule" (see its own comment) — every exit
-    // from this check, including a failed lookup, has to answer that
-    // question, or checkout is left stuck on a loading state forever.
-    const unblockAsOneTime = () => {
-      if (cancelled) return;
-      const sp = new URLSearchParams(params.toString());
-      sp.set("hasSchedule", "0");
-      router.replace(`?${sp.toString()}`, { scroll: false });
-    };
-    async function checkCartItem() {
-      try {
-        const res = await fetch(`${YELO_BASE}/product/view`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", base_version: "1.0.0", device_type: "WEB" },
-          body: JSON.stringify({ ...YELO_TENANT, product_id: Number(cartProductId) }),
-        });
-        const json = await res.json();
-        if (cancelled) return;
-        const p = json?.status === 200 ? (Array.isArray(json.data) ? json.data[0] : json.data) : null;
-        if (p && p.is_recurring_enabled === 1) {
-          router.replace(`/checkout?product=${cartProductId}`);
-        } else {
-          unblockAsOneTime();
-        }
-      } catch {
-        unblockAsOneTime();
-      }
-    }
-    checkCartItem();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, confirmed, cart.items.length]);
-
-  // `confirmed` is declared above (needed there too, for the cart-fallback
-  // guard). Once the subscription is actually confirmed (ClassCheckout.jsx
-  // sets `enrolled=1` on the URL the moment an order/rule is really created —
-  // see its own comment on this), the schedule picker must never come back,
-  // even if something puts `step=schedule` back on the URL (a bookmarked
-  // link, a reload, the back button). Checking placement, not payment, in
-  // progress — the flow is over, full stop.
-
-  // Stage 2 (details & payment) is active once a real time is locked in and the
-  // parent hasn't asked to come back and edit — hide the scheduler then.
-  const scheduled =
-    confirmed ||
-    (params.get("recurring") === "1" && !!params.get("time") && params.get("step") !== "schedule");
 
   useEffect(() => {
     let cancelled = false;
@@ -294,7 +153,7 @@ function SubscribeSchedulerInner() {
         const json = await res.json();
         if (cancelled) return;
         const p = json?.status === 200 ? (Array.isArray(json.data) ? json.data[0] : json.data) : null;
-        setProduct(p || false);
+        setProduct(p && p.is_recurring_enabled === 1 ? p : false);
       } catch {
         if (!cancelled) setProduct(false);
       }
@@ -305,87 +164,23 @@ function SubscribeSchedulerInner() {
     };
   }, [id]);
 
-  // ClassCheckout and EnrollHeader can't otherwise tell "recurring, schedule
-  // not chosen yet" apart from "one-time, nothing to schedule" — both start
-  // from the same bare `/checkout?product=X` URL. Without this, "Confirm &
-  // pay" was showing up while still on "Set up your subscription" for a
-  // recurring class, because the payment section had no way to know a
-  // schedule was still pending. Publish the real answer the moment this
-  // scheduler knows it, once, as a plain URL flag the rest of the page reads.
-  useEffect(() => {
-    if (!product) return;
-    const wantsSchedule = product.is_recurring_enabled === 1 ? "1" : "0";
-    if (params.get("hasSchedule") === wantsSchedule) return;
-    const sp = new URLSearchParams(params.toString());
-    sp.set("hasSchedule", wantsSchedule);
-    router.replace(`?${sp.toString()}`, { scroll: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [product]);
-
-  if (!product || scheduled) return null;
-
-  const common = {
-    productId: product.product_id,
-    productName: product.name,
-    price: Number(product.price) || 0,
-    storeUserId: product.user_id,
-    storeName: product.store_name || "This teacher",
-    productImage: product.image_url || "",
-  };
-
-  if (product.is_recurring_enabled !== 1) {
-    return <OneTimeAutoEnroll {...common} />;
-  }
-  return <SubscribePicker {...common} />;
-}
-
-// A class that isn't recurring-enabled has no schedule to pick — it just
-// needs to land in the cart so the payment step below has something to show.
-// Adds itself once (a ref guard, since the product/session effects this sits
-// beside can re-render) and renders nothing.
-function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeName, productImage }) {
-  const { items, add, setQty } = useCart();
-  const added = useRef(false);
-  // Per instruction: one class per order, always — not conditional on any
-  // merchant setting. A different product already sitting in the cart means
-  // this one can't be silently added alongside it.
-  const blockedByCartRule = items.length > 0 && items.some((it) => it.id !== productId);
-
-  useEffect(() => {
-    if (added.current || blockedByCartRule) return;
-    added.current = true;
-    add(
-      { id: storeUserId, name: storeName },
-      { id: productId, name: productName, price, image: productImage }
-    );
-    setQty(productId, 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, storeUserId, blockedByCartRule]);
-
-  if (blockedByCartRule) {
-    return (
-      <div className="sub-cart-block" role="alert">
-        <p>
-          This teacher only accepts one class per order. Clear your cart before enrolling in
-          {productName ? ` "${productName}"` : " this class"}.
-        </p>
-        <style>{cartBlockCss}</style>
-      </div>
-    );
-  }
-
-  return null;
+  if (!product) return null;
+  return (
+    <SubscribePicker
+      productId={product.product_id}
+      productName={product.name}
+      price={Number(product.price) || 0}
+      storeUserId={product.user_id}
+      storeName={product.store_name || "This teacher"}
+      productImage={product.image_url || ""}
+    />
+  );
 }
 
 function SubscribePicker({ productId, productName, price, storeUserId, storeName, productImage }) {
   const router = useRouter();
-  const params = useSearchParams();
-  const { items, add, setQty } = useCart();
+  const { add, setQty } = useCart();
   const [session, setSession] = useState(null);
-  // Same real "one class per order" rule OneTimeAutoEnroll enforces (see its
-  // comment) — checked here too since this is the OTHER of the only two
-  // places this build ever adds to the cart.
-  const blockedByCartRule = items.length > 0 && items.some((it) => it.id !== productId);
 
   useEffect(() => {
     setSession(getSession());
@@ -393,31 +188,14 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     window.addEventListener("yelo-session", onChange);
     return () => window.removeEventListener("yelo-session", onChange);
   }, []);
-
-  // Coming BACK from checkout's "Schedule" step: the choices the parent already
-  // made ride on the URL, so rehydrate them instead of resetting to defaults.
-  const qpDays = (params.get("days") || "").split(",").filter(Boolean).map(Number);
-  const qpFreq = params.get("frequency");
-  const [preset, setPreset] = useState(
-    PRESETS.some((p) => p.key === qpFreq) ? qpFreq : qpDays.length ? "custom" : "everyday"
-  );
-  const [days, setDays] = useState(qpDays.length ? qpDays : PRESETS[0].days);
-  const [date, setDate] = useState(params.get("start") || todayISO());
-  const [time, setTime] = useState(params.get("time") || "");
-  const [occurrences, setOccurrences] = useState(Math.max(1, Number(params.get("occurrences")) || 8));
-  // The "After N sessions" field used to be a plain controlled number input
-  // wired straight to `occurrences` — forcing every keystroke through
-  // `Math.max(1, Number(value) || 1)`. That's fine once a full number is
-  // typed, but the moment the field is EMPTY mid-edit (select-all + retype,
-  // the normal way to change "8" to "50"), `Number("") || 1` snapped the
-  // field straight back to "1" before the next digit ever landed — so typing
-  // "5" then "0" actually continued from "1", not from nothing. A separate
-  // draft string lets the field hold whatever's actually been typed,
-  // including briefly empty, while `occurrences` (the real value everything
-  // else here — the bill, the summary — reacts to) only updates once the
-  // draft is a genuinely valid number greater than 0.
-  const [occurrencesDraft, setOccurrencesDraft] = useState(String(occurrences));
-  const [occurrencesInvalid, setOccurrencesInvalid] = useState(false);
+  const [mode, setMode] = useState("subscribe"); // instant | subscribe
+  const [preset, setPreset] = useState("everyday");
+  const [days, setDays] = useState(PRESETS[0].days);
+  const [date, setDate] = useState(todayISO());
+  const [time, setTime] = useState("");
+  const [endMode, setEndMode] = useState("occurrences"); // date | occurrences
+  const [endDate, setEndDate] = useState(addDaysISO(todayISO(), 28));
+  const [occurrences, setOccurrences] = useState(8);
 
   const [slotState, setSlotState] = useState("loading"); // loading | real | fallback
   const [times, setTimes] = useState(() => buildFallbackTimes(todayISO()));
@@ -425,7 +203,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   const [realBill, setRealBill] = useState(null); // { perSession, occurrences, total } from a real get_bill_breakdown
 
   useEffect(() => {
-    if (!storeUserId) return;
+    if (mode !== "subscribe" || !storeUserId) return;
     let cancelled = false;
     async function load() {
       setSlotState("loading");
@@ -498,15 +276,15 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     return () => {
       cancelled = true;
     };
-  }, [date, storeUserId, session]);
+  }, [mode, date, storeUserId, session]);
 
   // If the selected time falls out of the list (e.g. it already passed once
   // the real/fallback slots were filtered), drop the stale selection instead
   // of silently keeping an unpickable value selected.
   useEffect(() => {
-    if (!time || slotState === "loading") return;
+    if (!time) return;
     if (!times.some((t) => t.value === time)) setTime("");
-  }, [times, slotState]);
+  }, [times]);
 
   const toggleDay = (i) => {
     setDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i].sort()));
@@ -528,20 +306,13 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     () => (daysDisabled ? [new Date(`${date}T00:00:00`).getDay()] : days),
     [daysDisabled, date, days]
   );
-  const sessionCount = occurrences;
+  const sessionCount =
+    endMode === "occurrences" ? occurrences : countOccurrences(date, endDate, effectiveDays);
   const estimatedTotal = price * Math.max(sessionCount, 0);
-
-  // See occurrenceCountToSend()'s comment for the real, verified backend bug
-  // this corrects for. Only meaningful when cycle_type is 0 (not
-  // Fortnight/Monthly, which step through dates completely differently).
-  const cycleTypeNow = PRESETS.find((p) => p.key === preset)?.cycle ?? 0;
-  const requestedOccurrenceCount = cycleTypeNow
-    ? occurrences
-    : occurrenceCountToSend(date, effectiveDays, occurrences);
 
   // attempt the real bill preview whenever the schedule changes meaningfully
   useEffect(() => {
-    if (!days.length || !time) {
+    if (mode !== "subscribe" || !days.length || !time) {
       setBillState("idle");
       return;
     }
@@ -555,7 +326,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
         schedule_time: time,
         is_recurring_enabled: true,
         cycle_type: preset_?.cycle ?? 0,
-        occurrence_count: String(requestedOccurrenceCount),
+        ...(endMode === "occurrences" ? { occurrence_count: String(occurrences) } : { end_schedule: endDate }),
       };
       try {
         const res = await fetch(`${YELO_BASE}/get_bill_breakdown`, {
@@ -601,10 +372,9 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
       cancelled = true;
       clearTimeout(t);
     };
-  }, [days, date, time, occurrences, preset, daysDisabled, storeUserId, productId, price, session]);
+  }, [mode, days, date, time, endMode, endDate, occurrences, preset, daysDisabled, storeUserId, productId, price, session]);
 
   const proceed = () => {
-    if (blockedByCartRule) return;
     // Populate the real, shared cart (single-merchant — the same `useCart()`
     // CheckoutPanel reads) so checkout actually has this class in it, instead
     // of relying only on URL params RecurringSummary displays.
@@ -624,6 +394,10 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     );
     setQty(productId, 1);
 
+    if (mode !== "subscribe") {
+      router.push(`/checkout?product=${productId}`);
+      return;
+    }
     const p = new URLSearchParams({
       product: String(productId),
       recurring: "1",
@@ -631,161 +405,154 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
       days: effectiveDays.join(","),
       start: date,
       time: time || times[0]?.value || "",
-      occurrences: String(occurrences),
+      endMode,
     });
+    if (endMode === "date") p.set("endDate", endDate);
+    else p.set("occurrences", String(occurrences));
     router.push(`/checkout?${p.toString()}`);
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const timeLabel = time ? times.find((t) => t.value === time)?.label || time : null;
-
   return (
-    <div className="bell-sub" aria-label="Set up your subscription">
+    <div className="bell-sub" aria-label="Set your preference">
       <div className="sub-main">
         <div className="sub-head">
           <p className="sub-eyebrow">Enroll {productName ? `in ${productName}` : "in this class"}</p>
-          <h3>Set up your subscription</h3>
-          <p className="sub-sub">Pick how often it runs, which days and time, and when it ends. You confirm and pay on the next step.</p>
-        </div>
-
-        <div className="sub-block">
-          <p className="sub-label">Frequency</p>
-          <div className="sub-presets" role="tablist" aria-label="Frequency">
-            {PRESETS.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                role="tab"
-                aria-selected={preset === p.key}
-                data-on={preset === p.key}
-                onClick={() => applyPreset(p)}
-              >
-                {p.label}
-              </button>
-            ))}
+          <h3>Set your preference</h3>
+          <div className="sub-mode" role="tablist" aria-label="Order type">
+            <button type="button" role="tab" aria-selected={mode === "instant"} data-on={mode === "instant"} onClick={() => setMode("instant")}>
+              Instant order
+            </button>
+            <button type="button" role="tab" aria-selected={mode === "subscribe"} data-on={mode === "subscribe"} onClick={() => setMode("subscribe")}>
+              Subscribe
+            </button>
           </div>
         </div>
 
-        <div className="sub-block">
-          <p className="sub-label">{daysDisabled ? "Anchor day" : "Days of the week"}</p>
-          <div className="sub-days" aria-label="Days of the week">
-            {DAY_LETTERS.map((l, i) => (
-              <button
-                key={i}
-                type="button"
-                data-on={effectiveDays.includes(i)}
-                disabled={daysDisabled}
-                onClick={() => toggleDay(i)}
-                aria-pressed={effectiveDays.includes(i)}
-                aria-label={["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][i]}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-          {daysDisabled && <p className="sub-hint">Repeats {preset === "fortnight" ? "every 14 days" : "on this date each month"} from your start date.</p>}
-        </div>
+        {mode === "subscribe" && (
+          <>
+            <div className="sub-block">
+              <p className="sub-label">Frequency</p>
+              <div className="sub-presets" role="tablist" aria-label="Frequency">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={preset === p.key}
+                    data-on={preset === p.key}
+                    onClick={() => applyPreset(p)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        <div className="sub-grid">
-          <div className="sub-field">
-            <DatePicker label="📅 Start date" value={date} min={todayISO()} onChange={setDate} />
-          </div>
-          <label className="sub-field">
-            <span>🕓 Time <i>({slotState === "real" ? "live" : slotState === "empty" ? "none left today" : "typical"})</i></span>
-            <select value={time} onChange={(e) => setTime(e.target.value)} disabled={slotState === "empty"}>
-              <option value="" disabled>{slotState === "empty" ? "No times left" : "Choose…"}</option>
-              {times.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {slotState === "fallback" && (
-          <p className="sub-note">Sign in to see this teacher's real open times — showing typical hours for now.</p>
-        )}
-        {slotState === "empty" && (
-          <p className="sub-note">This teacher has no more openings today — pick another date to see times.</p>
-        )}
+            <div className="sub-block">
+              <p className="sub-label">{daysDisabled ? "Anchor day" : "Days of the week"}</p>
+              <div className="sub-days" aria-label="Days of the week">
+                {DAY_LETTERS.map((l, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    data-on={effectiveDays.includes(i)}
+                    disabled={daysDisabled}
+                    onClick={() => toggleDay(i)}
+                    aria-pressed={effectiveDays.includes(i)}
+                    aria-label={["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][i]}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+              {daysDisabled && <p className="sub-hint">Repeats {preset === "fortnight" ? "every 14 days" : "on this date each month"} from your start date.</p>}
+            </div>
 
-        <div className="sub-block">
-          <p className="sub-label">Ends</p>
-          <div className="sub-end">
-            <label className={`sub-radio${occurrencesInvalid ? " sub-radio-invalid" : ""}`}>
-              After
-              <input
-                type="number"
-                min="1"
-                inputMode="numeric"
-                className="sub-inline-number"
-                aria-invalid={occurrencesInvalid}
-                value={occurrencesDraft}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  setOccurrencesDraft(raw);
-                  const n = Number(raw);
-                  // Live validation per the actual rule ("a number greater
-                  // than 0"): a real positive integer commits immediately so
-                  // the bill/summary track what's typed as it's typed. An
-                  // empty field, "0", a negative number or stray text just
-                  // flags invalid — it does NOT reset the field or the last
-                  // good `occurrences`, so typing continues undisturbed.
-                  const valid = raw.trim() !== "" && Number.isFinite(n) && Number.isInteger(n) && n > 0;
-                  setOccurrencesInvalid(!valid);
-                  if (valid) setOccurrences(n);
-                }}
-                onBlur={() => {
-                  // Leaving the field with nothing valid in it — snap back to
-                  // the last real value instead of leaving "Ends" pointed at
-                  // an empty or invalid number.
-                  if (occurrencesInvalid) {
-                    setOccurrencesDraft(String(occurrences));
-                    setOccurrencesInvalid(false);
-                  }
-                }}
-              />
-              sessions
-            </label>
-            {occurrencesInvalid && (
-              <p className="sub-inline-error" role="alert">Enter a number greater than 0</p>
+            <div className="sub-grid">
+              <div className="sub-field">
+                <DatePicker label="📅 Start date" value={date} min={todayISO()} onChange={setDate} />
+              </div>
+              <label className="sub-field">
+                <span>🕓 Time <i>({slotState === "real" ? "live" : slotState === "empty" ? "none left today" : "typical"})</i></span>
+                <select value={time} onChange={(e) => setTime(e.target.value)} disabled={slotState === "empty"}>
+                  <option value="" disabled>{slotState === "empty" ? "No times left" : "Choose…"}</option>
+                  {times.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {slotState === "fallback" && (
+              <p className="sub-note">Sign in to see this teacher's real open times — showing typical hours for now.</p>
             )}
-          </div>
-        </div>
+            {slotState === "empty" && (
+              <p className="sub-note">This teacher has no more openings today — pick another date to see times.</p>
+            )}
+
+            <div className="sub-block">
+              <p className="sub-label">Ends</p>
+              <div className="sub-end">
+                <label className="sub-radio">
+                  <input type="radio" name="end-mode" checked={endMode === "occurrences"} onChange={() => setEndMode("occurrences")} />
+                  After
+                  <input
+                    type="number"
+                    min="1"
+                    className="sub-inline-number"
+                    value={occurrences}
+                    disabled={endMode !== "occurrences"}
+                    onChange={(e) => setOccurrences(Math.max(1, Number(e.target.value) || 1))}
+                  />
+                  sessions
+                </label>
+                <label className="sub-radio sub-radio-date">
+                  <span className="sub-radio-head">
+                    <input type="radio" name="end-mode" checked={endMode === "date"} onChange={() => setEndMode("date")} />
+                    On date
+                  </span>
+                  <span className="sub-inline-date">
+                    <DatePicker value={endDate} min={date} onChange={setEndDate} disabled={endMode !== "date"} />
+                  </span>
+                </label>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <aside className="sub-summary">
-        <p className="sub-summary-kind">Subscription summary</p>
-        {productName && <p className="sub-summary-item">{productName}{storeName ? ` · ${storeName}` : ""}</p>}
-        <dl className="sub-summary-grid">
-          <div><dt>Frequency</dt><dd style={{ textTransform: "capitalize" }}>{preset === "custom" ? "Custom" : PRESETS.find((p) => p.key === preset)?.label || "—"}</dd></div>
-          <div><dt>Days</dt><dd>{effectiveDays.length ? effectiveDays.map((d) => DAY_NAMES[d]).join(", ") : "—"}</dd></div>
-          <div><dt>Time</dt><dd>{timeLabel || "Not picked yet"}</dd></div>
-          <div><dt>Starts</dt><dd>{date || "—"}</dd></div>
-          <div><dt>Ends</dt><dd>After {occurrences} session{occurrences === 1 ? "" : "s"}</dd></div>
-          <div><dt>Sessions</dt><dd>{(realBill?.occurrences ?? sessionCount) || "—"}</dd></div>
-        </dl>
-        <div className="sub-price-row">
-          <span>
-            {realBill ? `₹${realBill.perSession.toLocaleString()} × ${realBill.occurrences}` : price ? `₹${price.toLocaleString()} × ${sessionCount}` : "—"}
-          </span>
-          <b>{realBill ? `₹${realBill.total.toLocaleString()}` : price ? `₹${estimatedTotal.toLocaleString()}` : "—"}</b>
-        </div>
-        <p className="sub-price-tag">
-          {billState === "loading" ? "Checking exact price…"
-            : billState === "real" ? "Exact total from the real bill"
-            // Once signed in, a stuck "estimate" isn't an auth problem —
-            // telling a signed-in parent to "sign in" for the real total
-            // is just wrong, not merely imprecise.
-            : session ? "Estimated — exact total confirms at checkout"
-            : "Estimated — sign in for the exact total"}
-        </p>
-        {slotState === "fallback" && (
-          <p className="sub-note">These are typical hours, not this teacher's real slots — sign in to pick a bookable time before subscribing.</p>
+        <p className="sub-summary-kind">{mode === "subscribe" ? "Subscription summary" : "One-time class"}</p>
+        {mode === "subscribe" ? (
+          <>
+            <dl className="sub-summary-grid">
+              <div><dt>Days</dt><dd>{effectiveDays.length ? effectiveDays.map((d) => DAY_NAMES[d]).join(", ") : "—"}</dd></div>
+              <div><dt>Time</dt><dd>{time ? times.find((t) => t.value === time)?.label || time : "—"}</dd></div>
+              <div><dt>Sessions</dt><dd>{(realBill?.occurrences ?? sessionCount) || "—"}</dd></div>
+            </dl>
+            <div className="sub-price-row">
+              <span>
+                {realBill ? `₹${realBill.perSession.toLocaleString()} × ${realBill.occurrences}` : price ? `₹${price.toLocaleString()} × ${sessionCount}` : "—"}
+              </span>
+              <b>{realBill ? `₹${realBill.total.toLocaleString()}` : price ? `₹${estimatedTotal.toLocaleString()}` : "—"}</b>
+            </div>
+            <p className="sub-price-tag">
+              {billState === "loading" ? "Checking exact price…"
+                : billState === "real" ? "Exact total from the real bill"
+                // Once signed in, a stuck "estimate" isn't an auth problem —
+                // telling a signed-in parent to "sign in" for the real total
+                // is just wrong, not merely imprecise.
+                : session ? "Estimated — exact total confirms at checkout"
+                : "Estimated — sign in for the exact total"}
+            </p>
+          </>
+        ) : (
+          <div className="sub-price-row">
+            <span>Per session</span>
+            <b>{price ? `₹${price.toLocaleString()}` : "—"}</b>
+          </div>
         )}
-        {blockedByCartRule && (
-          <p className="sub-inline-error" role="alert">
-            This teacher only accepts one class per order — clear your cart before subscribing to
-            {productName ? ` "${productName}"` : " this class"}.
-          </p>
+        {mode === "subscribe" && slotState === "fallback" && (
+          <p className="sub-note">These are typical hours, not this teacher's real slots — sign in to pick a bookable time before subscribing.</p>
         )}
         <button
           type="button"
@@ -796,7 +563,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
           // slots exactly, so a subscription built on a guess is rejected at
           // save time ("Order date time is not available") instead of here,
           // where it's still fixable. Block it before that happens.
-          disabled={!days.length || !time || slotState === "fallback" || blockedByCartRule}
+          disabled={mode === "subscribe" && (!days.length || !time || slotState === "fallback")}
         >
           Proceed to pay
         </button>
@@ -808,26 +575,24 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
 }
 
 const css = `
-/* Matches the checkout ("Details & payment"): a page-width two-column grid,
-   the form in a card on the left, an elevated sticky summary on the right —
-   same tokens, radii and shadow language as the .ck-* checkout. */
 .bell-sub{
-  margin:28px auto 0; max-width:1000px;
-  display:grid; grid-template-columns:1fr; gap:16px; align-items:start;
-  font-family:var(--sans, var(--brand-font-body)); color:var(--ink, var(--brand-ink));
+  border:1px solid var(--brand-line); border-radius:var(--radius-lg);
+  background:var(--brand-surface); margin:36px 0 0; overflow:hidden;
+  display:grid; grid-template-columns:1fr; font-family:var(--brand-font-body); color:var(--brand-ink);
+  box-shadow:0 1px 2px color-mix(in srgb, var(--brand-ink) 8%, transparent);
 }
-@media (min-width:900px){ .bell-sub{ grid-template-columns:1fr 360px; } }
+@media (min-width:820px){ .bell-sub{ grid-template-columns:1fr 300px; } }
 
-.sub-main{
-  background:var(--card, var(--brand-surface));
-  border:1px solid var(--line, var(--brand-line));
-  border-radius:var(--r-lg, var(--radius-lg));
-  padding:22px; display:grid; gap:22px;
-}
+.sub-main{ padding:26px; display:grid; gap:22px; }
 .sub-head{ display:grid; gap:10px; }
-.sub-eyebrow{ margin:0; font-size:.78rem; font-weight:600; color:var(--muted, var(--brand-ink-soft)); }
-.sub-head h3{ margin:0; font-family:var(--display, var(--brand-font-display)); font-weight:700; letter-spacing:-.02em; font-size:clamp(1.3rem,3vw,1.6rem); }
-.sub-sub{ margin:0; font-size:.86rem; line-height:1.5; color:var(--muted, var(--brand-ink-soft)); max-width:46ch; }
+.sub-eyebrow{ margin:0; font-size:.78rem; font-weight:600; color:var(--brand-ink-soft); }
+.sub-head h3{ margin:0; font-family:var(--brand-font-display); font-weight:600; font-size:1.35rem; }
+.sub-mode{ display:inline-flex; padding:4px; border-radius:980px; background:var(--brand-paper); border:1px solid var(--brand-line); width:fit-content; }
+.sub-mode button{
+  border:0; background:transparent; color:var(--brand-ink-soft); font:inherit; font-weight:600; font-size:.86rem;
+  padding:9px 18px; border-radius:980px; cursor:pointer; transition:background var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease);
+}
+.sub-mode button[data-on="true"]{ background:var(--brand-ink); color:var(--brand-accent-ink); }
 
 .sub-block{ display:grid; gap:10px; }
 .sub-label{ margin:0; font-size:.76rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--brand-ink-soft); }
@@ -860,41 +625,35 @@ const css = `
 }
 .sub-note{ margin:-8px 0 0; font-size:.78rem; color:var(--brand-ink-soft); font-style:italic; }
 
-.sub-end{ display:grid; gap:6px; }
+.sub-end{ display:grid; gap:10px; }
 .sub-radio{ display:flex; align-items:center; gap:8px; font-size:.9rem; }
 .sub-radio input[type="radio"]{ accent-color:var(--brand-accent); }
-.sub-inline-number{ width:64px; padding:6px 8px; border:1px solid var(--brand-line); border-radius:8px; background:var(--brand-paper); color:var(--brand-ink); font:inherit; transition:border-color var(--motion) var(--motion-ease); }
-.sub-radio-invalid .sub-inline-number{ border-color:#c0392b; }
-.sub-inline-number:focus-visible{ outline:2px solid var(--brand-accent); outline-offset:1px; }
-.sub-inline-error{ margin:0; font-size:.78rem; color:#c0392b; }
+.sub-inline-number{ width:64px; padding:6px 8px; border:1px solid var(--brand-line); border-radius:8px; background:var(--brand-paper); color:var(--brand-ink); font:inherit; }
+.sub-radio-date{ align-items:flex-start; flex-direction:column; gap:8px; }
+.sub-radio-head{ display:flex; align-items:center; gap:8px; }
+.sub-inline-date{ padding-left:26px; max-width:240px; }
 
 .sub-summary{
-  background:var(--card, var(--brand-surface));
-  border:1px solid var(--line, var(--brand-line));
-  border-radius:var(--r-lg, var(--radius-lg));
-  padding:20px; display:flex; flex-direction:column; gap:13px;
-  box-shadow:var(--sh-md, 0 12px 28px -12px color-mix(in srgb, var(--brand-ink) 18%, transparent));
+  background:var(--brand-paper); border-top:1px solid var(--brand-line);
+  padding:24px; display:flex; flex-direction:column; gap:14px;
 }
-@media (min-width:900px){ .sub-summary{ position:sticky; top:74px; } }
-.sub-summary-kind{ margin:0; font-family:var(--display, var(--brand-font-display)); font-weight:700; font-size:1rem; letter-spacing:-.01em; }
-.sub-summary-item{ margin:-4px 0 0; font-size:.85rem; font-weight:600; color:var(--ink, var(--brand-ink)); }
-.sub-summary-grid{ margin:0; display:grid; gap:9px; padding:12px 0; border-top:1px solid var(--line, var(--brand-line)); border-bottom:1px solid var(--line, var(--brand-line)); }
-.sub-summary-grid > div{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
-.sub-summary-grid dt{ font-size:.72rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted, var(--brand-ink-soft)); }
-.sub-summary-grid dd{ margin:0; font-weight:600; font-size:.84rem; text-align:right; }
-.sub-price-row{ display:flex; align-items:baseline; justify-content:space-between; font-size:.9rem; }
-.sub-price-row b{ font-family:var(--display, var(--brand-font-display)); font-size:1.2rem; }
-.sub-price-tag{ margin:0; font-size:.74rem; color:var(--muted, var(--brand-ink-soft)); font-style:italic; }
+@media (min-width:820px){ .sub-summary{ border-top:0; border-left:1px solid var(--brand-line); } }
+.sub-summary-kind{ margin:0; font-family:var(--brand-font-display); font-weight:600; font-size:.92rem; }
+.sub-summary-grid{ margin:0; display:grid; gap:8px; }
+.sub-summary-grid dt{ font-size:.72rem; color:var(--brand-ink-soft); }
+.sub-summary-grid dd{ margin:0; font-weight:600; font-size:.86rem; }
+.sub-price-row{ display:flex; align-items:baseline; justify-content:space-between; padding-top:10px; border-top:1px dashed var(--brand-line); font-size:.9rem; }
+.sub-price-row b{ font-family:var(--brand-font-display); font-size:1.15rem; }
+.sub-price-tag{ margin:0; font-size:.74rem; color:var(--brand-ink-soft); font-style:italic; }
 
 .sub-cta{
-  margin-top:4px; padding:14px 20px; border-radius:var(--r, var(--radius)); border:0;
-  background:var(--brand, var(--brand-accent)); color:var(--on-brand, var(--brand-accent-ink));
-  font-family:var(--display, var(--brand-font-display)); font-weight:700; font-size:.95rem; cursor:pointer;
-  transition:filter var(--t), transform 140ms cubic-bezier(.2,.7,.3,1);
+  margin-top:4px; padding:13px 20px; border-radius:var(--radius); border:0;
+  background:var(--brand-accent); color:var(--brand-accent-ink); font-family:var(--brand-font-display);
+  font-weight:600; font-size:.94rem; cursor:pointer;
+  transition:filter var(--motion) var(--motion-ease);
 }
-.sub-cta:hover:not(:disabled){ filter:brightness(1.06); transform:translateY(-1px); }
-.sub-cta:disabled{ opacity:.55; cursor:not-allowed; }
+.sub-cta:hover{ filter:brightness(1.06); }
+.sub-cta:disabled{ opacity:.6; cursor:not-allowed; }
 
-.bell-sub :is(button,input,select):focus-visible{ outline:3px solid var(--brand, var(--brand-accent)); outline-offset:2px; }
-@media (prefers-reduced-motion:reduce){ .sub-cta:hover:not(:disabled){ transform:none; } .sub-days button[data-on="true"]{ transform:none; } }
+.bell-sub :is(button,input,select):focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 `;

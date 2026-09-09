@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 
 /**
  * SubjectTiles — real business categories from this tenant's backend
@@ -15,18 +14,9 @@ import { usePathname, useRouter } from "next/navigation";
  * Note: this tenant's real categories are general services (Handyman
  * Services, AC repair, Gardening & Landscaping...), not kids' school
  * subjects — that's what the backend actually has, so that's what's shown.
- *
- * CLICK BEHAVIOUR: a tile no longer navigates away. It sets `?category=<id>`
- * (+ `categoryName` for the label) on this same page and scrolls down to
- * "Teachers with classes open now" (`#teachers-open-now`), which reads that
- * param and re-fetches filtered. Verified live and real, not a client-side
- * filter: `marketplace/marketplace_get_city_storefronts_v3` (the same browse
- * call TeacherDirectory already uses) accepts `business_category_id` — called
- * with a real category id it returned a different, smaller, real result set
- * (3 stores) than the unfiltered call (9 stores), and a bogus id returned 0 —
- * same field/endpoint the real webapp's restaurant list uses
- * (restaurants.component.ts, `obj['business_category_id']`). The
- * "Browse everything" tile (`is_all_category`) clears the filter instead.
+ * Category tiles link to /stores?category=<id>; the search page doesn't
+ * filter by that id yet (it only filters by the sample subject slugs), so
+ * for now the link takes you to the full list rather than a filtered one.
  *
  * Falls back to a small labelled placeholder set only if the real call
  * fails outright (network/backend error) — not normally hit, since the
@@ -44,14 +34,14 @@ const FALLBACK = [
 
 const API_BASE = "https://test-api-new-3008.jungleworks.com";
 const QUERY =
-  "domain_name=deliverecttest.devweb1.yelo.red&post_to_get=1&marketplace_user_id=510009445" +
+  "domain_name=deliverecttest.freelancer.jungleworks.me&post_to_get=1&marketplace_user_id=510009445" +
   "&version=2&vendor_id=40951&latitude=28.61482&longitude=77.219989&home_delivery=1&dual_user_key=0&language=en";
 
 export default function SubjectTiles({
   heading = "Browse by category",
   subhead = "What this teacher network actually offers right now, pulled live from the marketplace.",
+  browseHref = "/stores",
 }) {
-  const pathname = usePathname();
   const [state, setState] = useState("loading"); // loading | real | fallback
   const [categories, setCategories] = useState([]);
 
@@ -111,16 +101,11 @@ export default function SubjectTiles({
           </ul>
         ) : (
           <ul className="bs-grid">
-            {tiles.map((t) => {
-              const href = t.isAll
-                ? `${pathname}#teachers-open-now`
-                : `${pathname}?category=${t.id}&categoryName=${encodeURIComponent(t.name)}#teachers-open-now`;
-              return (
-                <li key={t.id}>
-                  <Tile tile={t} href={href} />
-                </li>
-              );
-            })}
+            {tiles.map((t) => (
+              <li key={t.id}>
+                <Tile tile={t} href={t.isAll ? browseHref : `${browseHref}?category=${t.id}`} />
+              </li>
+            ))}
           </ul>
         )}
       </div>
@@ -131,7 +116,6 @@ export default function SubjectTiles({
 
 function Tile({ tile, href }) {
   const ref = useRef(null);
-  const router = useRouter();
   const [tiltable, setTiltable] = useState(false);
 
   useEffect(() => {
@@ -139,22 +123,6 @@ function Tile({ tile, href }) {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     setTiltable(fine && !reduced);
   }, []);
-
-  // Same page, so this is a filter + scroll, not a navigation: update the URL
-  // (so the section below can read `category` and it's shareable/bookmarkable)
-  // without Next's default hard jump-to-top, then ease down to the section
-  // ourselves — instant under prefers-reduced-motion.
-  const onClick = (e) => {
-    e.preventDefault();
-    router.push(href, { scroll: false });
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    requestAnimationFrame(() => {
-      document.getElementById("teachers-open-now")?.scrollIntoView({
-        behavior: reduced ? "auto" : "smooth",
-        block: "start",
-      });
-    });
-  };
 
   const onMove = (e) => {
     if (!tiltable) return;
@@ -185,7 +153,6 @@ function Tile({ tile, href }) {
       style={{ "--hue": tile.hue }}
       onPointerMove={onMove}
       onPointerLeave={reset}
-      onClick={onClick}
     >
       {tile.icon ? (
         <img className="bs-icon" src={tile.icon} alt="" width="36" height="36" loading="lazy" />

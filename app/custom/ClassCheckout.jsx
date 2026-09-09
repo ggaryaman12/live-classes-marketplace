@@ -55,97 +55,8 @@
  * backend — the same already-verified-working pattern SubscribeScheduler.jsx
  * uses for getRecurringSlots/get_bill_breakdown; this backend allows it from
  * the browser, no proxy needed.
- *
- * RAZORPAY — an IFRAME DOES NOT WORK HERE, confirmed live (real console
- * errors, this tenant): the hosted payment page answers with
- * `X-Frame-Options: sameorigin`, so the browser refuses to frame it from this
- * storefront's origin — full stop, not something fixable with a header or a
- * retry from our side. `X-Frame-Options: sameorigin` means "only a document
- * on MY OWN origin may frame me"; the real webapp can iframe this exact page
- * because it's deployed on that same origin, this separate Next.js storefront
- * never is. So this opens the payment page as a POPUP (`window.open`)
- * instead — confirmed against the actual static pages this backend serves:
- *  1. `payment/getPaymentUrl` (Joi contract at yelo-server
- *     modules/payment/validators/paymentValidator.js:74) with
- *     payment_method: 128 (PaymentMode.RAZORPAY — enums/enum.ts:80) and
- *     payment_for: 0 (CREATE_TASK — yelo-server properties/constants.js
- *     PAYMENT_FOR). Live-tested end to end against this tenant with a real
- *     session (real curl, real 200): came back `data.url` pointing at
- *     `.../payment/razorpay_merchant_order_id.html?access_token=...&order_id=...`.
- *  2. That page (yelo-server/public/razorpay_merchant_order_id.html:402-410)
- *     is the ACTUAL Razorpay checkout. On success it calls
- *     `razorPay/updateRazorpayTrasaction` itself, then redirects (real
- *     top-level navigation, not a message) to `/payment/success.html` with
- *     the payment details on the query string, and ALSO tries
- *     `window.parent.postMessage(...)` — which only ever reaches a real
- *     PARENT, i.e. an iframe embedder. In a popup, `window.parent === window`
- *     itself, so that particular call is a no-op for us; it's the redirect
- *     that actually carries the result forward.
- *  3. `success.html` (yelo-server/public/payment_gateways/success.html:55-98)
- *     is written for BOTH cases and says so in its own comment —
- *     `window.parent` "post message to Iframe Opener window" vs.
- *     `window.opener` "post message to window that opened the window via
- *     window.open" — and calls `window.opener.postMessage({status:'success',
- *     transactionId, payment_method}, domain_name)`, which IS how a popup's
- *     result reaches us, then closes itself. This is the real, intended
- *     popup contract, not a workaround bolted on top of an iframe-only page.
- *  4. On that message this file calls the SAME order-create path a cash
- *     order already uses in this component (`/api/order` for one-time,
- *     `recurring/saveRecurringTask` for a subscription) with
- *     `paymentType: RAZORPAY` — matching the real client, which also just
- *     calls its normal task-creation function after a successful gateway
- *     payment (payment.component.ts successPayfortTransaction():10820-10832
- *     → taskViaPayment()), it doesn't invent a separate "paid" order type.
- *
- * TWO HONEST GAPS:
- *  - `success.html`'s exact query-string contract (which params reach it,
- *    and in what casing) sits behind a multi-hop redirect this can't execute
- *    in a real browser from this workspace (CLAUDE.md: no Playwright/browser
- *    here) — the popup mechanism and the message shape above are read
- *    straight from that file's own source, but only a real signed-in payment
- *    run confirms the last hop end to end.
- *  - yelo-server records a gateway's transaction id via a `transaction_id`
- *    field on the order (customer_open_apis.js:6444), but that field isn't in
- *    this shared app's `buildOrderBody()` (lib/order.js, outside this
- *    workspace — read-only from here), so the order records "paid via
- *    Razorpay" (payment_method 128) but not the specific payment id.
- *
- * IF THE POPUP CLOSES WITH NO MESSAGE, THIS NEVER TRUSTS THE PARENT'S OWN
- * CLAIM — a real, reported bug: an earlier version showed a "Did you finish
- * paying?" Yes/No prompt and enrolled on "Yes" with no actual verification,
- * so anyone could get in for free by clicking it without ever paying.
- * `verifyRazorpayPayment()` instead asks yelo-server itself:
- * `razorPay/getRazorPayOrder` (razorPayPaymentController.js:346-410) reads
- * the transaction's real status, and if it's still pending, calls RAZORPAY'S
- * OWN API live before answering — it's not this app's guess either way. It
- * responds with the exact text "Payment is already done" (messageCode
- * PAYMENT_ALREADY_MADE, english.js:402) only when a payment genuinely went
- * through, and that specific string is the ONLY thing this treats as
- * success. A clean "not paid" (status 200, real order data) shows a plain
- * "nothing was charged" and lets them retry — no order created either way.
- * Only a truly inconclusive check (bad order id, expired session, network
- * failure) falls back to asking the parent to contact support rather than
- * silently deciding for them, and even then there is no "yes, enroll me"
- * button — that path can never create an order by itself again.
- *
- * RAZORPAY FOR A SUBSCRIPTION — previously blocked here after a real,
- * live-verified rejection: `recurring/saveRecurringTask`'s handler used to
- * reject any payment_method besides CASH/WALLET/PAYLATER outright
- * (yelo-server recurringController.js:1337-1344 — threw
- * `INVALID_PAYMENT_METHOD`, surfaced as "This Payment Method is not allowed
- * for subscription task, please contact your admin.", which is exactly the
- * error that came back). The platform side of that restriction has now been
- * changed (per instruction, not something re-verified from this workspace —
- * there's no way to call the backend as a different, patched version of
- * itself), so this re-enables the option: "Pay online" shows for a
- * subscription again, and a successful payment there calls
- * `recurring/saveRecurringTask` with `paymentType: RAZORPAY`, same as it
- * calls `/api/order` for a one-time class. If that backend change isn't
- * actually live yet, the exact same error will resurface — that's the
- * backend telling the truth about its own state, not a frontend bug.
  */
-import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import Link from 'next/link';
+import { Suspense, useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCart } from '../lib/cart';
 import { getSession, setSession as saveSession } from '../lib/session';
@@ -167,52 +78,11 @@ const YELO_BASE = 'https://test-api-3025.jungleworks.com';
 const YELO_TENANT = {
   marketplace_user_id: 510009445,
   marketplace_reference_id: '7a57517ff024ea5715497555a297e86c',
-  domain_name: 'deliverecttest.devweb1.yelo.red',
+  domain_name: 'deliverecttest.freelancer.jungleworks.me',
   dual_user_key: 0,
   language: 'en',
 };
-// The ONLY three payment_method values recurring/saveRecurringTask's own
-// handler accepts — hardcoded in the real backend, not a tenant setting
-// (yelo-server recurringController.js:1339-1344). Razorpay is deliberately
-// NOT in this list; see the file header for the exact error that comes back
-// if it's sent anyway.
 const RECURRING_PAYMENT_METHODS = [PAYMENT.CASH, PAYMENT.WALLET, PAYMENT.PAYLATER];
-// Not in the shared PAYMENT map because it isn't a per-tenant value — it's the
-// fixed marketplace-wide Razorpay code, verified in both real repos:
-// yelo-marketplace-webapp/src/app/enums/enum.ts:80 (PaymentMode.RAZORPAY =
-// 128) and yelo-server/properties/constants.js merchantPaymentMethodsMasks.
-const RAZORPAY = 128;
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function fmtClock(hhmm) {
-  if (!hhmm || !hhmm.includes(':')) return hhmm || '—';
-  const [h, m] = hhmm.split(':').map(Number);
-  const h12 = h % 12 || 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
-}
-
-// Same helper as SubscribeScheduler.jsx's occurrenceCountToSend() — see its
-// comment there for the real, verified backend bug this corrects for. Kept
-// as its own copy rather than a shared import since components in this
-// workspace are each resolved standalone (see file header).
-function occurrenceCountToSend(startISO, dayArray, desiredCount) {
-  const n = Number(desiredCount);
-  const start = startISO ? new Date(`${startISO}T00:00:00`) : null;
-  if (!dayArray?.length || !Number.isFinite(n) || n <= 0 || !start || isNaN(start.getTime())) {
-    return desiredCount;
-  }
-  const daySet = new Set(dayArray);
-  const cursor = new Date(start);
-  let matches = 0;
-  let guard = 0;
-  while (matches < n && guard < 3660) {
-    if (daySet.has(cursor.getDay())) matches++;
-    if (matches === n) break;
-    cursor.setDate(cursor.getDate() + 1);
-    guard++;
-  }
-  return Math.round((cursor - start) / 86400000);
-}
 
 const post = (url, body) =>
   fetch(apiPath(url), {
@@ -250,7 +120,6 @@ function ClassCheckoutInner({
   ctaLabel = 'Confirm & enroll',
   allowCash = true,
   allowWallet = false,
-  allowRazorpay = true,
 }) {
   const cart = useCart();
   const router = useRouter();
@@ -261,61 +130,13 @@ function ClassCheckoutInner({
   const [billing, setBilling] = useState(false);
   const [billFailed, setBillFailed] = useState(false);
   const [wallet, setWallet] = useState({ balance: 0, enabled: false });
-  const [pay, setPay] = useState(
-    allowCash ? PAYMENT.CASH : allowRazorpay ? RAZORPAY : PAYMENT.WALLET
-  );
+  const [pay, setPay] = useState(PAYMENT.CASH);
   const [contact, setContact] = useState({ name: '', phone: '', email: '' });
-  // "Clear cart" lives in the shared cart drawer outside this tenant's own
-  // files (same boundary as "Go to checkout"), so there's no click handler
-  // there to add a redirect to. Watching the real cart state gets the same
-  // outcome: if it goes from having something in it to genuinely empty while
-  // a parent is on this page, send them back to browse — UNLESS this page
-  // just cleared it itself after a real, successful order (see the several
-  // `cart.clear()` calls below, right after `setPlaced(...)`), in which case
-  // staying on the confirmation screen is obviously correct, not a bug.
-  const hadCartItems = useRef(false);
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced] = useState(null);
-
-  useEffect(() => {
-    if (!cart.ready) return;
-    if (cart.items.length > 0) {
-      hadCartItems.current = true;
-      return;
-    }
-    if (hadCartItems.current) {
-      hadCartItems.current = false;
-      if (!placed) router.push('/stores');
-    }
-  }, [cart.ready, cart.items.length, placed, router]);
-
   const [error, setError] = useState('');
   const [badFields, setBadFields] = useState([]);
   const [currencyId, setCurrencyId] = useState(undefined);
-  const [currencyCode, setCurrencyCode] = useState('INR');
-  const [razorpayStarting, setRazorpayStarting] = useState(false);
-  const [razorpayWaiting, setRazorpayWaiting] = useState(false);
-  // The payment window closed and we never got a clean success/cancel
-  // signal from it — see the note in startRazorpayPayment for why this is
-  // asked rather than guessed either way.
-  const [razorpayAmbiguous, setRazorpayAmbiguous] = useState(false);
-  // Plain refs, not state: the popup handle and a "did we already finish"
-  // flag are read from a setInterval closure and a window 'message' handler,
-  // neither of which needs a re-render when they change.
-  const razorpayPopupRef = useRef(null);
-  const razorpaySucceededRef = useRef(false);
-  // rzp_order_id from getPaymentUrl's own response — the one real handle we
-  // can use to ask the BACKEND whether a payment actually happened, instead
-  // of trusting the parent's own claim (see razorpayAmbiguous below).
-  const razorpayOrderIdRef = useRef(null);
-  const [razorpayVerifying, setRazorpayVerifying] = useState(false);
-
-  // Real completion signal, not the ephemeral `placed` state below — this is
-  // what survives a reload or a revisited/shared link. Same key list
-  // EnrollHeader.jsx and SubscribeScheduler.jsx check, kept in sync with
-  // both: whichever of these lands on the URL means the order/subscription
-  // genuinely exists already, so the live form must never render again.
-  const confirmed = ['order', 'order_id', 'job_id', 'rule_id', 'enrolled'].some((k) => params.get(k));
 
   // Same recap params RecurringSummary.jsx reads off the URL, set by
   // SubscribeScheduler.jsx's proceed() when the parent chose "Subscribe".
@@ -325,68 +146,10 @@ function ClassCheckoutInner({
   const dayArray = (params.get('days') || '').split(',').filter(Boolean).map(Number);
   const scheduleTime = params.get('time') || '';
   const startSchedule = params.get('start') || '';
+  const recurringEndMode = params.get('endMode');
+  const recurringEndDate = params.get('endDate') || '';
   const recurringOccurrences = params.get('occurrences') || '';
-  // Same real backend bug SubscribeScheduler.jsx's occurrenceCountToSend()
-  // corrects for (see its comment there for the full trace): get_bill_breakdown
-  // counts an INCLUSIVE date range whose end depends on occurrence_count, so
-  // the returned count can land above OR below what the parent actually
-  // chose depending on the exact day_array/start combination — not a fixed
-  // "+1". Without this, a parent who agreed to N sessions on the schedule
-  // step could be billed for a different number right here, at the moment
-  // money actually changes hands. Only meaningful when cycle_type is unset
-  // (Fortnight/Monthly step through dates completely differently and are
-  // sent as chosen, unverified for this fix).
-  const requestedRecurringOccurrences =
-    !cycleType && recurringOccurrences
-      ? String(occurrenceCountToSend(startSchedule, dayArray, recurringOccurrences))
-      : recurringOccurrences;
   const usesRecurringApi = isSubscription && RECURRING_PAYMENT_METHODS.includes(pay);
-
-  // Stage 2 of this page. "Edit" jumps back to the scheduler (stage 1) at the
-  // top, keeping every choice so nothing is re-picked.
-  const stepSchedule = params.get('step') === 'schedule';
-  const scheduled = isSubscription && !!scheduleTime && !stepSchedule;
-
-  // Set by the scheduler component the moment it knows whether THIS product
-  // actually has a schedule to pick — '1' recurring, '0' one-time. Needed
-  // because a bare `/checkout?product=X` looks identical whether or not a
-  // schedule is coming; without this, payment showed up while the parent was
-  // still on "Set up your subscription" for a recurring class.
-  const productParam = params.get('product') || params.get('id');
-  const hasSchedule = params.get('hasSchedule');
-  // `scheduled` already proves a schedule was really completed even on a URL
-  // that dropped the `hasSchedule` flag (e.g. right after "Proceed to pay"
-  // rewrites the query to the day/time params) — never re-hide in that case.
-  //
-  // A SECOND, no-productParam version of the exact same wait: the cart's own
-  // "Go to checkout" button (shared chrome, not built here) sends the browser
-  // to bare `/checkout` — no product id at all — for a cart that might still
-  // hold a recurring-enabled class. SubscribeScheduler.jsx runs its own check
-  // in that exact case and always resolves `hasSchedule` one way or the
-  // other (see its comment), but that's a real network round trip; without
-  // waiting on it too, this section flashed "Confirm & pay" for a plain
-  // one-time order before the redirect to the real schedule step landed —
-  // reported live. Mirrors that effect's own trigger condition exactly (no
-  // id, not already confirmed, exactly one cart item) so it never blocks a
-  // multi-item or already-resolved cart — including the `!cart.ready` beat:
-  // the cart itself hydrates from localStorage a tick after mount, so on the
-  // very first render it always LOOKS empty even when it really holds one
-  // item, and trusting that would have skipped this wait entirely.
-  const cartFallbackPending =
-    !productParam && !confirmed && hasSchedule === null && (!cart.ready || cart.items.length === 1);
-  const waitingOnSchedule = (!!productParam && hasSchedule === null && !scheduled) || cartFallbackPending;
-  const scheduleRequired = hasSchedule === '1';
-
-  let scheduleHref = null;
-  {
-    const sp = new URLSearchParams();
-    for (const k of ['product', 'id', 'session', 'frequency', 'days', 'start', 'time', 'occurrences']) {
-      const v = params.get(k);
-      if (v) sp.set(k, v);
-    }
-    sp.set('step', 'schedule');
-    scheduleHref = `/checkout?${sp.toString()}`;
-  }
 
   useEffect(() => {
     const s = getSession();
@@ -395,48 +158,19 @@ function ClassCheckoutInner({
     setSessionReady(true);
   }, []);
 
-  // currency_id doesn't appear in recurring/saveRecurringTask's OWN required
-  // fields, but the real handler reads it straight off the parsed
-  // `request_body` blob and stores it on the saved rule row
-  // (yelo-server recurringController.js:1353 reads it, :1442 saves it as
-  // `currentRule.currency_id`) — a missing key here isn't cosmetic, it's a
-  // real column on a real INSERT. `marketplace_fetch_app_configuration`
-  // (what the normal /api/order route uses server-side via getAppConfig())
-  // used to answer with a genuine SQL error for this tenant — root-caused,
-  // finally: YELO_TENANT.domain_name was wrong (the freelancer.jungleworks.me
-  // one, not this tenant's real deliverecttest.devweb1.yelo.red), which broke
-  // this endpoint's own tenant lookup. Fixed now — verified live: real 200,
-  // real `currency_id: 16`. The fallback chain below (the store-level
-  // endpoint, then the live bill's own CURRENCY object, then a last-resort
-  // `0`) stays as genuine defense in depth, not because this call is expected
-  // to fail anymore.
-  // Also feeds Razorpay's `currency` field below — real code, not a guess,
-  // now that this call actually resolves this tenant (see the note above).
+  // currency_id isn't in the recurring endpoint's own required fields, but it
+  // rides inside `request_body` the same way it does on a one-time order — the
+  // normal /api/order route gets it server-side from getAppConfig(); this
+  // direct-to-backend path fetches it itself the same way SubscribeScheduler
+  // and other components already call the tenant config endpoint.
   useEffect(() => {
+    if (!isSubscription) return;
     let cancelled = false;
-    async function loadCurrencyId() {
-      const config = await yeloPost('marketplace_fetch_app_configuration', YELO_TENANT);
-      if (cancelled) return;
-      if (config?.status === 200 && config?.data?.currency_id != null) {
-        setCurrencyId(config.data.currency_id);
-        const code = config.data.payment_settings?.[0]?.code;
-        if (code) setCurrencyCode(code);
-        return;
-      }
-      if (!cart.storeId) return;
-      const store = await yeloPost('marketplace_get_city_storefronts_single_v2', {
-        ...YELO_TENANT,
-        user_id: cart.storeId,
-        latitude: ONLINE_PLACEHOLDER.lat,
-        longitude: ONLINE_PLACEHOLDER.lng,
-      });
-      if (!cancelled && store?.status === 200 && store?.data?.currency_id != null) {
-        setCurrencyId(store.data.currency_id);
-      }
-    }
-    loadCurrencyId();
+    yeloPost('marketplace_fetch_app_configuration', YELO_TENANT).then((j) => {
+      if (!cancelled && j?.status === 200 && j?.data?.currency_id) setCurrencyId(j.data.currency_id);
+    });
     return () => { cancelled = true; };
-  }, [cart.storeId]);
+  }, [isSubscription]);
 
   // THE CART'S qty × price IS THE WRONG NUMBER FOR A SUBSCRIPTION.
   //
@@ -479,43 +213,24 @@ function ClassCheckoutInner({
       schedule_time: scheduleTime,
       is_recurring_enabled: true,
       ...(cycleType ? { cycle_type: cycleType } : {}),
-      occurrence_count: requestedRecurringOccurrences,
+      ...(recurringEndMode === 'date' ? { end_schedule: recurringEndDate } : { occurrence_count: recurringOccurrences }),
     }).then((json) => {
       if (cancelled) return;
       if (json?.status === 200 && json?.data) {
         const b = json.data;
-        // THE CRASH: OCCURRENCE_COUNT can come back as `{}` instead of being
-        // absent — same known shape as CURRENCY below (customer_open_apis.js:2835),
-        // just never noticed here because `?? null` treats `{}` as a real value.
-        // Unlike perSession/total (only ever shown through money()/template
-        // literals, which silently stringify anything), `occurrences` is
-        // rendered as a bare JSX child a few lines down ("Ends after {…}
-        // sessions" and the "Sessions" row) — handing that an object throws
-        // React error #31 ("object with keys {}") and takes the whole section
-        // down. Coerce to a real number or null right here, once, so nothing
-        // downstream has to guess.
-        const rawOccurrences = b.OCCURRENCE_COUNT;
-        const occurrenceCount =
-          rawOccurrences != null && typeof rawOccurrences !== 'object' ? Number(rawOccurrences) : NaN;
         setRecurringBill({
           perSession: b.NET_PAYABLE_AMOUNT ?? item.price,
-          occurrences: Number.isFinite(occurrenceCount) ? occurrenceCount : null,
+          occurrences: b.OCCURRENCE_COUNT ?? null,
           total: b.TOTAL_RECURRING_AMOUNT ?? b.NET_PAYABLE_AMOUNT ?? null,
         });
         setRecurringBillState('real');
-        // The best real source for this store's currency_id: it's the SAME
-        // call already proving out the bill, for the SAME store, so it can't
-        // disagree with what's actually being charged. `CURRENCY` can be `{}`
-        // (a known real shape, see customer_open_apis.js:2835) — only take it
-        // when it's actually populated.
-        if (b.CURRENCY?.currency_id != null) setCurrencyId(b.CURRENCY.currency_id);
       } else {
         setRecurringBill(null);
         setRecurringBillState('estimate');
       }
     });
     return () => { cancelled = true; };
-  }, [isSubscription, cart.items, cart.storeId, dayArrayKey, startSchedule, scheduleTime, cycleType, recurringOccurrences, session]);
+  }, [isSubscription, cart.items, cart.storeId, dayArrayKey, startSchedule, scheduleTime, cycleType, recurringEndMode, recurringEndDate, recurringOccurrences, session]);
 
   // deliveryType 2 = self-pickup on the shared bill/order contract, which is
   // what zeroes the delivery charge — the closest real fit for "nothing is
@@ -550,13 +265,6 @@ function ClassCheckoutInner({
   const total = isSubscription && recurringBill ? recurringBill.total : (bill?.total ?? cart.subtotal);
   const walletShort = wallet.enabled && wallet.balance < total;
   const currency = bill?.currency || '₹';
-  // payment/getPaymentUrl's Joi schema requires vendor_id for a normal
-  // (non subscription-plan) payment — there's no guest path for paying
-  // online, unlike cash. Verified live: a call with no real session comes
-  // back `status:101 "Session expired"` rather than succeeding.
-  // No longer excluding isSubscription — see the file header on the
-  // recurring-task payment_method restriction and its (reported) fix.
-  const canRazorpay = !!(session?.vendorId && session?.token);
 
   useEffect(() => {
     if (pay === PAYMENT.WALLET && (walletShort || !wallet.enabled) && allowCash) {
@@ -564,297 +272,10 @@ function ClassCheckoutInner({
     }
   }, [walletShort, wallet.enabled, pay, allowCash]);
 
-  useEffect(() => {
-    if (pay === RAZORPAY && !canRazorpay && allowCash) {
-      setPay(PAYMENT.CASH);
-    }
-  }, [canRazorpay, pay, allowCash]);
-
   const money = useMemo(
     () => (n) => `${currency}${Number(n || 0).toFixed(2).replace(/\.00$/, '')}`,
     [currency],
   );
-
-  // Real client waits ~3s after the iframe's postMessage before treating a
-  // Razorpay payment as final (payment.component.ts successRazorpayTransaction)
-  // — long enough for Razorpay's own on-screen success state to be visible
-  // before the iframe vanishes, so it doesn't look like the tap did nothing.
-  // One-time enrollments only — a subscription can never reach here because
-  // Razorpay is hidden on that checkout (see canRazorpay below); this used to
-  // also try recurring/saveRecurringTask with paymentType: RAZORPAY, but that
-  // call's own handler hard-rejects any payment_method besides
-  // CASH/WALLET/PAYLATER (see the file header), so it could only ever fail.
-  async function completeAfterRazorpay() {
-    const merged = { ...(session || {}), ...contact };
-    setPlacing(true);
-
-    if (isSubscription) {
-      const requestBody = buildOrderBody({
-        storeId: cart.storeId,
-        items: cart.items,
-        address: ONLINE_PLACEHOLDER,
-        session: merged,
-        paymentType: RAZORPAY,
-        bill,
-        deliveryType: 2,
-        // `currencyId` can still be null/undefined if every real source came
-        // back empty for this tenant (no multi-currency config) — `0` isn't a
-        // guess: it's the exact value yelo-server's OWN handler sends for a
-        // non-multi-currency tenant (customer_open_apis.js:1765 —
-        // `req.adminConfig.is_multi_currency_enabled ? currencyObj.currency_id
-        // : 0`), so it's what a real order looks like here anyway. `??`, not
-        // `||`, so a real `0` currency id is never mistaken for "unset" and
-        // overwritten by the same 0 — the point is only to stop `undefined`
-        // from ever reaching this key, which is what was making it vanish
-        // from request_body entirely (JSON.stringify drops undefined values).
-        config: { currencyId: currencyId ?? 0 },
-        envelope: YELO_TENANT,
-      });
-      const r = await yeloPost('recurring/saveRecurringTask', {
-        ...YELO_TENANT,
-        user_id: cart.storeId,
-        vendor_id: merged.vendorId,
-        access_token: merged.token,
-        day_array: dayArray,
-        schedule_time: scheduleTime,
-        start_schedule: startSchedule,
-        occurrence_count: recurringOccurrences,
-        ...(cycleType ? { cycle_type: cycleType } : {}),
-        request_body: JSON.stringify({ ...requestBody, google_meet: 1 }),
-      });
-      setPlacing(false);
-      if (r?.status === 200) {
-        setPlaced({
-          orderId: r.data?.rule_id || null,
-          storeId: cart.storeId,
-          storeName: cart.storeName,
-          vendorId: merged.vendorId,
-          accessToken: merged.token,
-          items: cart.items.map((it) => ({ ...it })),
-          bill,
-          isSubscription: true,
-        });
-        cart.clear();
-        return;
-      }
-      // If the backend's own restriction (see file header) isn't actually
-      // patched yet, this is exactly the error that comes back — real, from
-      // the backend, not this file guessing wrong.
-      setError(r?.message || 'Payment went through, but the subscription could not be created — contact support with your Razorpay receipt, nothing will be charged twice.');
-      return;
-    }
-
-    const r = await post('/api/order', {
-      storeId: cart.storeId,
-      items: cart.items,
-      address: ONLINE_PLACEHOLDER,
-      session: merged,
-      paymentType: RAZORPAY,
-      bill,
-      deliveryType: 2,
-    });
-    setPlacing(false);
-    if (r.ok) {
-      setPlaced({ ...r, storeName: cart.storeName, items: cart.items.map((it) => ({ ...it })), bill });
-      cart.clear();
-      return;
-    }
-    setError(r.message || 'Payment went through, but the booking could not be recorded — contact support with your Razorpay receipt, nothing will be charged twice.');
-  }
-
-  // window.onmessage — widened after a real report of "payment succeeded,
-  // order never got created". success.html's own comment documents the
-  // shape it sends a popup opener (`{status:'success', transactionId,
-  // payment_method}`, yelo-server/public/payment_gateways/success.html:55-98)
-  // and that's still the primary match, but that page is reached through a
-  // real multi-hop redirect (razorpay_merchant_order_id.html ->
-  // razorPay/updateRazorpayTrasaction -> /payment/success.html) this
-  // workspace has no browser to actually run end to end (CLAUDE.md: no
-  // Playwright here) — so the exact query-string casing that survives every
-  // hop, and whether the browser even preserves `window.opener` across that
-  // chain, can't be fully confirmed from source reading alone. Rather than
-  // risk missing the real message because of a shape mismatch, ANY object
-  // message that arrives while we're actively waiting on OUR OWN popup
-  // (razorpayPopupRef.current is only set for the lifetime of one payment
-  // attempt) is treated as the result, unless it explicitly says
-  // action:'close'. console.info left in on purpose — open dev tools during
-  // a real test payment and the exact shape that arrives is now visible.
-  useEffect(() => {
-    function onMessage(event) {
-      const d = event.data;
-      if (!d || typeof d !== 'object') return;
-      if (!razorpayPopupRef.current) return;
-      console.info('[razorpay] message received from payment window:', d, 'origin:', event.origin);
-      if (d.action === 'close') {
-        razorpayPopupRef.current = null;
-        setRazorpayWaiting(false);
-        setError('Payment window closed — nothing was charged.');
-        return;
-      }
-      razorpaySucceededRef.current = true;
-      try { razorpayPopupRef.current.close(); } catch {}
-      razorpayPopupRef.current = null;
-      setRazorpayWaiting(false);
-      setRazorpayAmbiguous(false);
-      completeAfterRazorpay();
-    }
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, contact, cart.items, cart.storeId, cart.storeName, isSubscription, dayArray, scheduleTime, startSchedule, recurringOccurrences, cycleType, bill, currencyId]);
-
-  async function startRazorpayPayment() {
-    if (!session?.vendorId || !session?.token) {
-      return setError('Sign in to pay online — Razorpay needs a real account.');
-    }
-    if (isSubscription && (!dayArray.length || !scheduleTime)) {
-      return setError('Pick a day and time on the class page before subscribing.');
-    }
-
-    // X-Frame-Options: sameorigin on the hosted payment page rules out an
-    // iframe (see file header) — this opens a real popup instead. It has to
-    // be opened SYNCHRONOUSLY, before the await below, or every browser
-    // treats it as an unrequested popup and blocks it silently: a blank
-    // window now, navigated to the real URL once we have it.
-    const popup = window.open('', 'yelo-razorpay', 'width=460,height=680');
-    if (!popup) {
-      return setError('Your browser blocked the payment window — allow pop-ups for this site and try again.');
-    }
-    try {
-      popup.document.write('<!doctype html><title>Razorpay</title><body style="font:14px -apple-system,sans-serif;padding:32px;color:#444">Loading payment…</body>');
-    } catch { /* cross-origin write failures are harmless — the real URL replaces this shortly */ }
-    razorpaySucceededRef.current = false;
-    razorpayPopupRef.current = popup;
-    setRazorpayAmbiguous(false);
-
-    const merged = { ...(session || {}), ...contact };
-    if (typeof window !== 'undefined') saveSession(merged);
-
-    setRazorpayStarting(true);
-    const r = await yeloPost('payment/getPaymentUrl', {
-      ...YELO_TENANT,
-      amount: total,
-      app_type: 'WEB',
-      payment_for: 0, // CREATE_TASK — yelo-server properties/constants.js PAYMENT_FOR
-      // Real currency code from marketplace_fetch_app_configuration's
-      // payment_settings[0].code (payment.component.ts:1634 reads the same
-      // field) — verified live for this tenant: "INR". 'INR' state default
-      // only covers the brief window before that call resolves.
-      currency: currencyCode,
-      name: merged.name || 'Parent',
-      email: merged.email || 'contact@yelo.red', // the backend's own default for a blank email (paymentValidator.js:79-81) — matched, not invented
-      vendor_id: merged.vendorId,
-      access_token: merged.token,
-      app_access_token: merged.token,
-      user_id: cart.storeId,
-      payment_method: RAZORPAY,
-    });
-    setRazorpayStarting(false);
-
-    if (r?.status === 200 && r?.data?.url) {
-      setRazorpayWaiting(true);
-      // rzp_order_id — the real Razorpay order this payment is for — is what
-      // lets us ask the BACKEND afterwards whether it was actually paid,
-      // rather than trusting whatever the parent clicks. See
-      // verifyRazorpayPayment below.
-      razorpayOrderIdRef.current = r.data.rzp_order_id || null;
-      // The real client appends its own origin so the hosted page (and the
-      // success.html it redirects to) knows where to postMessage the result
-      // — see the file header for exactly which page reads this.
-      popup.location.href = `${r.data.url}&domain_name=${encodeURIComponent(window.location.origin)}`;
-      // A cross-origin popup gives no way to peek at what's happening inside
-      // it besides postMessage and this closed check — there's no third
-      // channel. If it closes and we never got a message, this used to just
-      // ASK the parent "did you pay?" and trust a click either way — a real,
-      // reported bug: clicking "Yes" with no payment made still created the
-      // order for free. Ask the BACKEND instead — see verifyRazorpayPayment.
-      const poll = setInterval(() => {
-        if (!razorpayPopupRef.current || razorpayPopupRef.current.closed) {
-          clearInterval(poll);
-          if (!razorpaySucceededRef.current) {
-            razorpayPopupRef.current = null;
-            setRazorpayWaiting(false);
-            verifyRazorpayPayment();
-          }
-        }
-      }, 700);
-    } else {
-      try { popup.close(); } catch { /* already gone */ }
-      razorpayPopupRef.current = null;
-      setError(r?.message || 'Could not start Razorpay — please try another payment method.');
-    }
-  }
-
-  // THE REAL FIX for "clicked Yes without paying, still got enrolled": never
-  // let the parent's own claim decide this. `razorPay/getRazorPayOrder`
-  // (yelo-server razorPayPaymentController.js:346-410) is a genuine
-  // server-side check — it reads the transaction's real status, and if it's
-  // still pending, calls RAZORPAY'S OWN API (GET /orders/:id) to check again
-  // live before answering. It responds `"Payment is already done"`
-  // (messageCode PAYMENT_ALREADY_MADE, english.js:402) ONLY when the payment
-  // genuinely went through — that specific text is the one and only signal
-  // this treats as "paid". Needs `rzp_order_id` (captured above) and the
-  // session's access_token, matching the validator at
-  // razorpay/validators/*.js: `getRazorPayOrder` (rzp_order_id,
-  // app_access_token both required).
-  async function verifyRazorpayPayment() {
-    const orderId = razorpayOrderIdRef.current;
-    if (!orderId || !session?.token) {
-      // No order id to check, or no session to check it with — genuinely
-      // can't verify either way. Land on the safe side: don't create the
-      // order, and don't claim it wasn't charged either, since we don't
-      // actually know.
-      setRazorpayAmbiguous(true);
-      return;
-    }
-    setRazorpayVerifying(true);
-    const r = await yeloPost('razorPay/getRazorPayOrder', {
-      rzp_order_id: orderId,
-      app_access_token: session.token,
-    });
-    setRazorpayVerifying(false);
-
-    const paid = /already\s*(done|made|paid)/i.test(r?.message || '');
-    if (paid) {
-      completeAfterRazorpay();
-      return;
-    }
-    // status 200 here means Razorpay's own API confirmed it is NOT paid
-    // (the controller only returns normal order/theme data in that case) —
-    // a real negative, not a guess.
-    if (r?.status === 200) {
-      setError('Payment wasn’t completed — nothing was charged. Pick a payment method to try again.');
-      return;
-    }
-    // Anything else (a stale/invalid order id, an expired session, a network
-    // failure) is genuinely inconclusive — same safe default as above.
-    setRazorpayAmbiguous(true);
-  }
-
-  function retryRazorpayFromAmbiguous() {
-    setRazorpayAmbiguous(false);
-    setError('We couldn’t confirm whether that payment went through. If Razorpay actually charged you, contact us with your payment reference before paying again — otherwise pick a payment method to retry.');
-  }
-
-  // EnrollHeader's step marker (the "Schedule / Details & payment /
-  // Confirmed" bar) reads completion from the URL — `done` is true only once
-  // one of order/order_id/job_id/rule_id/enrolled is present as a query
-  // param. Every place() / completeAfterRazorpay() branch below used to only
-  // set the `placed` REACT STATE and never touch the URL, so once an order or
-  // subscription actually went through, the confirmation content rendered
-  // correctly but the header above it kept showing "Details & payment" as
-  // the current step (and "Schedule" as a clickable link back) — a real,
-  // reported bug: nothing here actually blocked stepping back into a
-  // finished checkout, the header just never learned it was finished. This
-  // is the one place that needs to know, so it's a single effect rather than
-  // repeating the same router call in every success branch above.
-  useEffect(() => {
-    if (!placed) return;
-    const sp = new URLSearchParams(params.toString());
-    sp.set('enrolled', '1');
-    router.replace(`?${sp.toString()}`, { scroll: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placed]);
 
   async function place() {
     setError('');
@@ -866,12 +287,6 @@ function ClassCheckoutInner({
     }
     if (pay === PAYMENT.WALLET && wallet.balance < total) {
       return setError('Wallet balance is short of the total. Choose another payment method.');
-    }
-    if (isSubscription && (!dayArray.length || !scheduleTime)) {
-      return setError('Pick a day and time on the class page before subscribing.');
-    }
-    if (pay === RAZORPAY) {
-      return startRazorpayPayment();
     }
 
     const merged = { ...(session || {}), ...contact };
@@ -897,17 +312,7 @@ function ClassCheckoutInner({
         paymentType: pay,
         bill,
         deliveryType: 2,
-        // `currencyId` can still be null/undefined if every real source came
-        // back empty for this tenant (no multi-currency config) — `0` isn't a
-        // guess: it's the exact value yelo-server's OWN handler sends for a
-        // non-multi-currency tenant (customer_open_apis.js:1765 —
-        // `req.adminConfig.is_multi_currency_enabled ? currencyObj.currency_id
-        // : 0`), so it's what a real order looks like here anyway. `??`, not
-        // `||`, so a real `0` currency id is never mistaken for "unset" and
-        // overwritten by the same 0 — the point is only to stop `undefined`
-        // from ever reaching this key, which is what was making it vanish
-        // from request_body entirely (JSON.stringify drops undefined values).
-        config: { currencyId: currencyId ?? 0 },
+        config: { currencyId },
         envelope: YELO_TENANT,
       });
       const r = await yeloPost('recurring/saveRecurringTask', {
@@ -918,16 +323,11 @@ function ClassCheckoutInner({
         day_array: dayArray,
         schedule_time: scheduleTime,
         start_schedule: startSchedule,
-        occurrence_count: recurringOccurrences,
+        ...(recurringEndMode === 'date'
+          ? { end_schedule: recurringEndDate }
+          : { occurrence_count: recurringOccurrences }),
         ...(cycleType ? { cycle_type: cycleType } : {}),
-        // google_meet: 1 requested specifically for the recurring create call —
-        // added only inside request_body (an opaque JSON blob the validator
-        // doesn't inspect), not as a top-level field, and not on the one-time
-        // order path (buildOrderBody is shared with create_task_via_vendor_v2).
-        // Nothing found in the real backend or webapp source currently reads
-        // this key, so until the platform team wires it up this rides along
-        // inert rather than doing anything visible.
-        request_body: JSON.stringify({ ...requestBody, google_meet: 1 }),
+        request_body: JSON.stringify(requestBody),
       });
       setPlacing(false);
 
@@ -1012,49 +412,13 @@ function ClassCheckoutInner({
           items={placed.items}
           bill={placed.bill}
           currency={currency}
-          payLabel={pay === PAYMENT.CASH ? 'Pay at the session' : pay === RAZORPAY ? 'Paid online via Razorpay' : 'Paid'}
+          payLabel={pay === PAYMENT.CASH ? 'Pay at the session' : 'Paid'}
           session={session}
         />
         <button className="ck-place ck-done-btn" onClick={() => router.push('/stores')}>Back to teachers</button>
       </div>
     );
   }
-
-  // A reload (or a bookmarked/shared link) after a real confirmation drops
-  // the `placed` state above — it's plain React state, not read from the
-  // URL — but `enrolled=1` (set the moment an order/rule is actually
-  // created, see the effect above) stays on the URL. Without this check the
-  // live payment form would render again on reload, which is exactly the
-  // "still able to navigate back into checkout after paying" bug being
-  // fixed here: it isn't enough to hide the header's back-link, a full
-  // reload must not resurrect the form either. This can't rebuild the full
-  // receipt (that needs a real backend re-fetch by order id, which is a
-  // bigger change than this fix), so it shows a plain, honest notice instead
-  // of either the form or a receipt it can't actually prove.
-  if (confirmed) {
-    return (
-      <div className="ck-done">
-        <h1>Already confirmed</h1>
-        <p className="ck-done-sub">
-          This {isSubscription ? 'subscription' : 'enrollment'} was already submitted — check your email, or your subscriptions list, for the details.
-        </p>
-        <button className="ck-place ck-done-btn" onClick={() => router.push(isSubscription ? '/p/my-subscriptions' : '/stores')}>
-          {isSubscription ? 'View my subscriptions' : 'Back to teachers'}
-        </button>
-      </div>
-    );
-  }
-
-  // Still finding out whether this class needs a schedule at all — stay
-  // hidden rather than flash "Confirm & pay" before the scheduler above has
-  // had a chance to say so (a real bug: it used to show up immediately, on
-  // the "Set up your subscription" screen, for any recurring class).
-  if (waitingOnSchedule) return null;
-  // A class that does need one stays hidden until it's actually picked. A
-  // one-time class (hasSchedule === '0') never had this requirement, so it
-  // was never caught by this — and must not be, or checkout goes blank for
-  // it (confirmed live: merchant "QA X"'s non-recurring Maths products).
-  if (scheduleRequired && !scheduled) return null;
 
   if (cart.ready && cart.count === 0) {
     return (
@@ -1073,6 +437,14 @@ function ClassCheckoutInner({
       <h1 className="ck-title">{title}</h1>
       <div className="ck-grid">
         <div className="ck-left">
+          <section className="ck-card ck-online-note">
+            <div className="ck-card-h">This is a live online class</div>
+            <p className="ck-online-copy">
+              No delivery or pickup — your child joins from any device with a
+              link we’ll send you. Just tell us who’s attending.
+            </p>
+          </section>
+
           <section className="ck-card">
             <div className="ck-card-h">Who’s attending</div>
             <input className={`ck-in${bad('name')}`} value={contact.name} placeholder="Parent or student name"
@@ -1095,17 +467,6 @@ function ClassCheckoutInner({
                   onChange={() => setPay(PAYMENT.CASH)} />
                 <span className="ck-pay-i" aria-hidden="true">💵</span>
                 <span className="ck-pay-b"><b>Pay at the session</b><small>Settle with the teacher directly</small></span>
-              </label>
-            )}
-            {allowRazorpay && (
-              <label className={`ck-pay ${pay === RAZORPAY ? 'on' : ''} ${!canRazorpay ? 'off' : ''}`}>
-                <input type="radio" name="pay" disabled={!canRazorpay}
-                  checked={pay === RAZORPAY} onChange={() => setPay(RAZORPAY)} />
-                <span className="ck-pay-i" aria-hidden="true">💳</span>
-                <span className="ck-pay-b">
-                  <b>Pay online</b>
-                  <small>{canRazorpay ? 'Card, UPI or netbanking — secured by Razorpay' : 'Sign in to pay online with Razorpay'}</small>
-                </span>
               </label>
             )}
             {allowWallet && (
@@ -1141,36 +502,6 @@ function ClassCheckoutInner({
                       </span>
                     </div>
                   ))}
-                </div>
-                <div className="ck-sched-wrap">
-                  <div className="ck-sched-head">
-                    <span>Class schedule</span>
-                    {scheduleHref && <Link className="ck-sched-edit" href={scheduleHref}>Edit</Link>}
-                  </div>
-                  <dl className="ck-sched">
-                    {frequency && (
-                      <div><dt>Frequency</dt><dd style={{ textTransform: 'capitalize' }}>{frequency}</dd></div>
-                    )}
-                    <div><dt>Days</dt><dd>{dayArray.length ? dayArray.map((d) => DAY_NAMES[d]).join(', ') : '—'}</dd></div>
-                    <div>
-                      <dt>Time</dt>
-                      <dd>
-                        {scheduleTime
-                          ? fmtClock(scheduleTime)
-                          : scheduleHref
-                            ? <Link className="ck-sched-edit" href={scheduleHref}>Pick a time</Link>
-                            : 'Not selected'}
-                      </dd>
-                    </div>
-                    {startSchedule && <div><dt>Starts</dt><dd>{startSchedule}</dd></div>}
-                    <div>
-                      <dt>Ends</dt>
-                      <dd>After {recurringOccurrences || recurringBill?.occurrences || '—'} sessions</dd>
-                    </div>
-                    {(recurringBill?.occurrences ?? recurringOccurrences) && (
-                      <div><dt>Sessions</dt><dd>{recurringBill?.occurrences ?? recurringOccurrences}</dd></div>
-                    )}
-                  </dl>
                 </div>
                 <BillLines
                   bill={recurringBill ? {
@@ -1211,39 +542,15 @@ function ClassCheckoutInner({
             )}
 
             {error && <div className="ck-error" role="alert">{error}</div>}
-            {razorpayWaiting && (
-              <div className="ck-rzp-note" role="status">
-                Finish paying in the Razorpay window that just opened — this page will move on by itself once it's done.
-              </div>
-            )}
-            {razorpayVerifying && (
-              <div className="ck-rzp-note" role="status">
-                Checking with Razorpay whether that payment went through…
-              </div>
-            )}
-            {razorpayAmbiguous && (
-              <div className="ck-rzp-ambiguous" role="alert">
-                <p>The payment window closed and we couldn't confirm with Razorpay whether it went through.</p>
-                <p>We won't enroll you until we can confirm a real payment — no order is created from a guess either way.</p>
-                <div className="ck-rzp-ambiguous-actions">
-                  <button type="button" className="ck-rzp-retry" onClick={retryRazorpayFromAmbiguous}>OK, let me try again</button>
-                </div>
-              </div>
-            )}
 
             <button
               className="ck-place"
-              data-busy={placing || razorpayStarting ? '1' : undefined}
-              disabled={placing || billing || !bill || billFailed || razorpayStarting || razorpayWaiting || razorpayVerifying || razorpayAmbiguous || (isSubscription && recurringBillState === 'loading')}
+              data-busy={placing ? '1' : undefined}
+              disabled={placing || billing || !bill || billFailed || (isSubscription && recurringBillState === 'loading')}
               onClick={place}
             >
-              {razorpayStarting ? 'Opening Razorpay…'
-                : razorpayWaiting ? 'Waiting for payment…'
-                : razorpayVerifying ? 'Checking payment…'
-                : razorpayAmbiguous ? 'Confirm above to continue'
-                : placing ? (pay === RAZORPAY ? 'Confirming payment…' : usesRecurringApi ? 'Subscribing…' : 'Enrolling…')
+              {placing ? (usesRecurringApi ? 'Subscribing…' : 'Enrolling…')
                 : billing || (isSubscription && recurringBillState === 'loading') ? 'Updating total…'
-                : pay === RAZORPAY ? `${ctaLabel} with Razorpay · ${money(total)}`
                 : `${ctaLabel} · ${money(total)}`}
             </button>
             <div className="ck-secure">🔒 {session ? `Signed in as ${session.name || 'you'}` : 'Guest checkout'}</div>
@@ -1256,52 +563,6 @@ function ClassCheckoutInner({
 }
 
 const css = `
-/* This checkout now stands on its own — the page around it dropped the big
-   banner and the duplicate bill section — so give it a little more room and a
-   cleaner rhythm than the shared defaults. */
-.ck{ max-width:1080px; }
-.ck-title{ margin-bottom:24px; }
-.ck-grid{ gap:24px; }
-@media (min-width:881px){ .ck-grid{ grid-template-columns:1fr 380px; } }
-.ck-left{ gap:14px; }
-.ck-card{ padding:20px; }
-.ck-card-h{ margin-bottom:14px; }
-
-.ck-summary .ck-card-h{ font-size:15.5px; }
-.ck-sched-wrap{ margin:12px 0; padding:12px 0; border-top:1px solid var(--line, var(--brand-line)); border-bottom:1px solid var(--line, var(--brand-line)); }
-.ck-sched-head{
-  display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px;
-  font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
-  color:var(--muted, var(--brand-ink-soft));
-}
-.ck-sched-edit{
-  font-size:11px; font-weight:700; letter-spacing:.02em; text-transform:none;
-  color:var(--brand, var(--brand-accent)); text-decoration:underline; text-underline-offset:2px;
-}
-.ck-sched-edit:hover{ filter:brightness(1.1); }
-.ck-sched{ display:grid; gap:9px; margin:0; }
-.ck-sched > div{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
-.ck-sched dt{
-  font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
-  color:var(--muted, var(--brand-ink-soft));
-}
-.ck-sched dd{ margin:0; font-size:13px; font-weight:600; text-align:right; }
-.ck-rzp-note{
-  margin:-4px 0 2px; padding:10px 12px; border-radius:var(--radius);
-  background:var(--brand-accent-soft); color:var(--brand-ink); font-size:.82rem; line-height:1.4;
-  border:1px solid color-mix(in srgb, var(--brand-accent) 24%, var(--brand-line));
-}
-.ck-rzp-ambiguous{
-  margin:-4px 0 2px; padding:12px 14px; border-radius:var(--radius);
-  background:var(--brand-paper); border:1px solid var(--brand-line);
-}
-.ck-rzp-ambiguous p{ margin:0 0 6px; font-size:.85rem; line-height:1.45; color:var(--brand-ink); }
-.ck-rzp-ambiguous p:last-of-type{ margin-bottom:10px; }
-.ck-rzp-ambiguous-actions{ display:flex; flex-wrap:wrap; gap:8px; }
-.ck-rzp-ambiguous-actions button{
-  font:inherit; font-weight:700; font-size:.82rem; padding:9px 14px; border-radius:980px; cursor:pointer;
-  border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink);
-}
-.ck-rzp-retry{ border-color:var(--brand-accent) !important; background:var(--brand-accent) !important; color:var(--brand-accent-ink) !important; }
-.ck-rzp-ambiguous-actions button:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
+.ck-online-note{ background:var(--brand-accent-soft); }
+.ck-online-copy{ margin:6px 0 0; color:var(--brand-ink-soft); font-size:.88rem; line-height:1.5; }
 `;

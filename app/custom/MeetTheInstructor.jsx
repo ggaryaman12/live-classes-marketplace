@@ -1,38 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 /**
  * MeetTheInstructor — "Meet the instructor" on a teacher's page: a photo,
- * their name, and a short bio.
+ * their name, and a short bio. Tries the real merchant profile call for
+ * this teacher first (their id, read from the URL); if a real name/bio
+ * comes back it's used as-is. Two live checks against this tenant's backend
+ * (for user_id 510012595) both returned an empty profile, so this cannot
+ * claim a specific real person's bio when nothing real is available —
+ * the fallback is a clearly labelled SAMPLE bio with a generic placeholder
+ * name, never presented as if it were the real teacher's story.
  *
- * REAL DATA SOURCE, corrected: this used to call `merchant/viewProfile` for
- * the teacher's id, which comes back empty for every store on this tenant —
- * verified live, repeatedly. The real bio lives one call over, on
- * `marketplace_get_city_storefronts_single_v2` (the same real, working
- * store-lookup StoreHeader's `bind.source:"store"` already uses, and the one
- * this build already relies on elsewhere for a working `currency_id`) —
- * confirmed live for store 510013303 ("Harkirat"): a real, substantial
- * `description` ("Harkirat is a public speaking and communication expert
- * with 15 years of experience…") sitting right next to `store_name` and
- * `logo`. So this now shows the REAL store name + real description whenever
- * a real description exists, and only falls back to the fully-sample
- * name+bio (clearly tagged) when a store genuinely has none set.
- *
- * Self-contained: no cross-file component imports (see LiveCatalogue.jsx for
- * why) — `next/link` is a framework import, not a local one, so it's fine.
- *
- * Carries its own "← All teachers" back link now too: the store page's
- * StoreHeader section (the only other place that link lived) was removed
- * per instruction, and this became the first section on the page.
+ * Self-contained: no cross-file imports (see LiveCatalogue.jsx for why).
  */
 
 const YELO_BASE = "https://test-api-3025.jungleworks.com";
 const YELO_TENANT = {
   marketplace_user_id: 510009445,
   marketplace_reference_id: "7a57517ff024ea5715497555a297e86c",
-  domain_name: "deliverecttest.devweb1.yelo.red",
+  domain_name: "deliverecttest.freelancer.jungleworks.me",
   dual_user_key: 0,
 };
 
@@ -51,8 +38,6 @@ function currentStoreId() {
 
 export default function MeetTheInstructor({
   heading = "Meet the instructor",
-  backLabel = "← All teachers",
-  browseHref = "/",
 }) {
   const [state, setState] = useState("loading"); // loading | real | sample
   const [profile, setProfile] = useState(null);
@@ -67,31 +52,22 @@ export default function MeetTheInstructor({
         return;
       }
       try {
-        const res = await fetch(`${YELO_BASE}/marketplace_get_city_storefronts_single_v2`, {
+        const res = await fetch(`${YELO_BASE}/merchant/viewProfile`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             base_version: "1.0.0",
             device_type: "WEB",
           },
-          body: JSON.stringify({
-            ...YELO_TENANT,
-            language: "en",
-            user_id: storeId,
-            latitude: 28.61482,
-            longitude: 77.219989,
-          }),
+          body: JSON.stringify({ ...YELO_TENANT, user_id: storeId }),
         });
         const json = await res.json();
-        const raw = json?.status === 200 ? json?.data : null;
-        const data = Array.isArray(raw) ? raw[0] : raw;
+        const data = json?.status === 200 ? json?.data : null;
         if (cancelled) return;
-        // The real bar is a real DESCRIPTION — `store_name` alone is present
-        // for every store and isn't a "bio" on its own.
-        if (data && data.description && data.description.trim()) {
+        if (data && data.display_name && data.description) {
           setProfile({
-            name: data.store_name || SAMPLE_BIO.name,
-            bio: data.description.trim(),
+            name: data.display_name,
+            bio: data.description,
             photo: data.logo || data.banner_image || "",
           });
           setState("real");
@@ -115,7 +91,6 @@ export default function MeetTheInstructor({
   return (
     <section className="bell-mti" aria-labelledby="bell-mti-h">
       <div className="mti-frame">
-        <Link href={browseHref} className="mti-back">{backLabel}</Link>
         <div className="mti-head">
           <h2 id="bell-mti-h">{heading}</h2>
           {state === "sample" && <span className="mti-sample-tag">Sample bio — for layout</span>}
@@ -159,8 +134,6 @@ const css = `
 .bell-mti{ background:var(--brand-paper); color:var(--brand-ink); font-family:var(--brand-font-body); padding:56px 20px; border-bottom:1px solid var(--brand-line); }
 @media (min-width:820px){ .bell-mti{ padding:80px 32px; } }
 .mti-frame{ max-width:1100px; margin-inline:auto; }
-.mti-back{ display:inline-block; margin-bottom:18px; color:var(--brand-accent); font-weight:650; font-size:.88rem; text-decoration:none; }
-.mti-back:hover{ text-decoration:underline; }
 .mti-head{ display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; justify-content:space-between; margin-bottom:22px; }
 .mti-head h2{ font-family:var(--brand-font-display); font-weight:600; letter-spacing:-.01em; font-size:clamp(1.4rem,3.4vw,1.9rem); margin:0; }
 .mti-sample-tag{ padding:5px 12px; border-radius:980px; border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink-soft); font-size:11.5px; font-weight:700; }

@@ -1,3 +1,13 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// TALKS TO THE YELO BACKEND. Restyle it freely; keep the API calls.
+//
+// The markup, classes and copy in here are yours to change. The fetches, the
+// field names and the order of the bill/order/payment calls are a contract with
+// the YELO API — if they change, this still renders but stops working, and the
+// failure shows up at the till rather than in the build.
+//
+// Endpoints and payloads: docs/YELO_API_REFERENCE.md
+// ─────────────────────────────────────────────────────────────────────────────
 'use client';
 // Customer auth — phone OTP (primary) + email/password. Talks to /api/auth,
 // which injects the tenant envelope server-side and calls the marketplace
