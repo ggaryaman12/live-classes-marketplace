@@ -135,8 +135,15 @@ export default function SubscribeScheduler() {
  */
 function SubscribeSchedulerInner() {
   const params = useSearchParams();
-  const id = params.get("id");
+  // This scheduler is stage 1 of the checkout page. The class id arrives as
+  // `product` there (and as `id` when linked from anywhere else).
+  const id = params.get("id") || params.get("product");
   const [product, setProduct] = useState(null);
+
+  // Stage 2 (details & payment) is active once a real time is locked in and the
+  // parent hasn't asked to come back and edit — hide the scheduler then.
+  const scheduled =
+    params.get("recurring") === "1" && !!params.get("time") && params.get("step") !== "schedule";
 
   useEffect(() => {
     let cancelled = false;
@@ -165,7 +172,7 @@ function SubscribeSchedulerInner() {
     };
   }, [id]);
 
-  if (!product) return null;
+  if (!product || scheduled) return null;
   return (
     <SubscribePicker
       productId={product.product_id}
@@ -201,8 +208,6 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   const [days, setDays] = useState(qpDays.length ? qpDays : PRESETS[0].days);
   const [date, setDate] = useState(params.get("start") || todayISO());
   const [time, setTime] = useState(params.get("time") || "");
-  const [endMode, setEndMode] = useState(params.get("endMode") === "date" ? "date" : "occurrences"); // date | occurrences
-  const [endDate, setEndDate] = useState(params.get("endDate") || addDaysISO(todayISO(), 28));
   const [occurrences, setOccurrences] = useState(Math.max(1, Number(params.get("occurrences")) || 8));
 
   const [slotState, setSlotState] = useState("loading"); // loading | real | fallback
@@ -414,6 +419,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     if (endMode === "date") p.set("endDate", endDate);
     else p.set("occurrences", String(occurrences));
     router.push(`/checkout?${p.toString()}`);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const timeLabel = time ? times.find((t) => t.value === time)?.label || time : null;
@@ -424,12 +430,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
         <div className="sub-head">
           <p className="sub-eyebrow">Enroll {productName ? `in ${productName}` : "in this class"}</p>
           <h3>Set up your subscription</h3>
-          <p className="sub-sub">Pick how often it runs, which days and time, and when it ends. You confirm and pay on the next screen.</p>
-          <ol className="sub-steps" aria-label="Progress">
-            <li className="sub-step" data-state="current" aria-current="step"><span className="sub-step-dot">1</span>Schedule</li>
-            <li className="sub-step" data-state="next"><span className="sub-step-dot">2</span>Details &amp; payment</li>
-            <li className="sub-step" data-state="next"><span className="sub-step-dot">3</span>Confirmed</li>
-          </ol>
+          <p className="sub-sub">Pick how often it runs, which days and time, and when it ends. You confirm and pay on the next step.</p>
         </div>
 
         <div className="sub-block">
@@ -590,19 +591,6 @@ const css = `
 .sub-eyebrow{ margin:0; font-size:.78rem; font-weight:600; color:var(--muted, var(--brand-ink-soft)); }
 .sub-head h3{ margin:0; font-family:var(--display, var(--brand-font-display)); font-weight:700; letter-spacing:-.02em; font-size:clamp(1.3rem,3vw,1.6rem); }
 .sub-sub{ margin:0; font-size:.86rem; line-height:1.5; color:var(--muted, var(--brand-ink-soft)); max-width:46ch; }
-
-.sub-steps{
-  list-style:none; margin:6px 0 0; padding:14px 0 0; border-top:1px solid var(--line, var(--brand-line));
-  display:flex; flex-wrap:wrap; gap:8px 16px;
-}
-.sub-step{ display:inline-flex; align-items:center; gap:8px; font-size:.83rem; font-weight:600; color:var(--muted, var(--brand-ink-soft)); }
-.sub-step-dot{
-  width:22px; height:22px; border-radius:50%; flex:none; display:grid; place-items:center; font-size:.72rem;
-  border:1px solid var(--line, var(--brand-line)); background:var(--paper, var(--brand-paper)); color:var(--muted, var(--brand-ink-soft));
-}
-.sub-step[data-state="current"]{ color:var(--ink, var(--brand-ink)); }
-.sub-step[data-state="current"] .sub-step-dot{ background:var(--brand-wash, var(--brand-accent-soft)); border-color:var(--brand, var(--brand-accent)); color:var(--brand, var(--brand-accent)); }
-@media (max-width:520px){ .sub-step[data-state="next"]{ font-size:0; gap:0; } .sub-step[data-state="next"] .sub-step-dot{ font-size:.72rem; } }
 
 .sub-block{ display:grid; gap:10px; }
 .sub-label{ margin:0; font-size:.76rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--brand-ink-soft); }
