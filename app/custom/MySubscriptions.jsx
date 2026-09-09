@@ -257,6 +257,41 @@ function Detail({ ruleId, session }) {
     return () => { cancelled = true; };
   }, [ruleId, session]);
 
+  // The per-session schedule for this rule — split by the backend into
+  // `upcoming` and `completed`. Verified live against this tenant:
+  // `recurring/list` with `rule_id` returns { upcoming[], completed[],
+  // upcoming_count, completed_count }, each row carrying date, start_time,
+  // session / total_sessions, is_skipped and an optional meeting_link.
+  // Same required-but-not-filtered `user_id` convention as the calls above.
+  const [sesState, setSesState] = useState('loading'); // loading | ok | error
+  const [sessions, setSessions] = useState({ upcoming: [], completed: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    setSesState('loading');
+    yeloPost('recurring/list', {
+      ...YELO_TENANT,
+      user_id: YELO_TENANT.marketplace_user_id,
+      vendor_id: session.vendorId,
+      access_token: session.token,
+      rule_id: ruleId,
+      limit: 100,
+      offset: 0,
+    }).then((json) => {
+      if (cancelled) return;
+      if (json?.status === 200 && json?.data) {
+        setSessions({
+          upcoming: Array.isArray(json.data.upcoming) ? json.data.upcoming : [],
+          completed: Array.isArray(json.data.completed) ? json.data.completed : [],
+        });
+        setSesState('ok');
+      } else {
+        setSesState('error');
+      }
+    });
+    return () => { cancelled = true; };
+  }, [ruleId, session]);
+
   if (state === 'loading') {
     return (
       <div className="ms-detail" aria-busy="true">
@@ -295,6 +330,84 @@ function Detail({ ruleId, session }) {
         <div><dt>Payment</dt><dd>{rule.payment_type === 'CASH' ? 'Pay at the session' : rule.payment_type || '—'}</dd></div>
         <div><dt>Attendee</dt><dd>{rule.customer_username || '—'}</dd></div>
       </dl>
+
+      <SessionSchedule state={sesState} sessions={sessions} />
+    </div>
+  );
+}
+
+function SessionSchedule({ state, sessions }) {
+  if (state === 'loading') {
+    return (
+      <div className="ms-sessions" aria-busy="true">
+        <span className="ms-skel-line" style={{ width: '35%' }} />
+        <span className="ms-skel-line" style={{ width: '80%' }} />
+        <span className="ms-skel-line" style={{ width: '65%' }} />
+      </div>
+    );
+  }
+  if (state === 'error') {
+    return (
+      <div className="ms-sessions">
+        <p className="ms-sessions-err">Couldn't load the class schedule for this course. Try reloading the page.</p>
+      </div>
+    );
+  }
+
+  const { upcoming, completed } = sessions;
+
+  return (
+    <div className="ms-sessions">
+      <SessionGroup
+        title="Upcoming classes"
+        count={upcoming.length}
+        rows={upcoming}
+        emptyText="No upcoming classes — every session in this course is done."
+        tone="upcoming"
+      />
+      <SessionGroup
+        title="Completed classes"
+        count={completed.length}
+        rows={completed}
+        emptyText="No completed classes yet — the course hasn't started."
+        tone="completed"
+      />
+    </div>
+  );
+}
+
+function SessionGroup({ title, count, rows, emptyText, tone }) {
+  return (
+    <div className={`ms-sgroup ms-sgroup-${tone}`}>
+      <div className="ms-sgroup-head">
+        <h3>{title}</h3>
+        <span className="ms-sgroup-count">{count}</span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="ms-sgroup-empty">{emptyText}</p>
+      ) : (
+        <ol className="ms-slist">
+          {rows.map((s, i) => {
+            const time = fmtTime(s.start_time);
+            const end = fmtTime(s.end_time);
+            return (
+              <li key={`${s.session}-${s.date}-${i}`} className={`ms-srow${s.is_skipped ? ' is-skipped' : ''}`}>
+                <span className="ms-snum">{s.session}<i>/{s.total_sessions}</i></span>
+                <span className="ms-sbody">
+                  <span className="ms-sdate">{fmtDate(s.date) || s.date}</span>
+                  <span className="ms-smeta">
+                    {time ? (end ? `${time} – ${end}` : time) : 'Time to be confirmed'}
+                    {s.is_skipped ? ' · Skipped' : ''}
+                  </span>
+                </span>
+                {s.meeting_link && !s.is_skipped && (
+                  <a className="ms-sjoin" href={s.meeting_link} target="_blank" rel="noreferrer">Join</a>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </div>
   );
 }
@@ -347,4 +460,24 @@ const css = `
 .ms-skel{ border:1px solid var(--brand-line); border-radius:var(--radius-lg); background:var(--brand-surface); padding:18px; display:grid; }
 
 @media (prefers-reduced-motion: reduce){ .ms-skel-line, .ms-name-skel{ animation:none; } }
+
+.ms-sessions{ margin-top:22px; padding-top:20px; border-top:1px solid var(--brand-line); display:grid; gap:22px; }
+.ms-sessions-err{ margin:0; color:var(--brand-ink-soft); font-size:.86rem; }
+.ms-sgroup-head{ display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.ms-sgroup-head h3{ margin:0; font-family:var(--brand-font-display); font-weight:650; font-size:.98rem; }
+.ms-sgroup-count{ min-width:22px; height:22px; padding:0 6px; display:inline-grid; place-items:center; border-radius:980px; font-size:.72rem; font-weight:700; background:var(--brand-accent-soft); color:var(--brand-accent); }
+.ms-sgroup-completed .ms-sgroup-count{ background:color-mix(in srgb, var(--brand-ink-soft) 16%, transparent); color:var(--brand-ink-soft); }
+.ms-sgroup-empty{ margin:0; color:var(--brand-ink-soft); font-size:.84rem; }
+
+.ms-slist{ list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+.ms-srow{ display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--brand-line); border-radius:var(--radius); background:var(--brand-paper); }
+.ms-srow.is-skipped{ opacity:.6; }
+.ms-snum{ flex:none; width:38px; height:38px; border-radius:50%; display:grid; place-items:center; background:var(--brand-accent-soft); color:var(--brand-accent); font-weight:700; font-size:.86rem; line-height:1; }
+.ms-snum i{ font-style:normal; font-size:.62rem; opacity:.7; }
+.ms-sgroup-completed .ms-snum{ background:color-mix(in srgb, var(--brand-ink-soft) 14%, transparent); color:var(--brand-ink-soft); }
+.ms-sbody{ display:grid; gap:2px; min-width:0; flex:1; }
+.ms-sdate{ font-weight:600; font-size:.86rem; }
+.ms-smeta{ font-size:.76rem; color:var(--brand-ink-soft); }
+.ms-sjoin{ flex:none; padding:6px 14px; border-radius:980px; background:var(--brand-accent); color:var(--brand-accent-ink); font-weight:650; font-size:.78rem; text-decoration:none; }
+.ms-sjoin:hover{ filter:brightness(1.06); }
 `;
