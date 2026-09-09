@@ -97,26 +97,6 @@ function buildFallbackTimes(dateISO) {
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
-function addDaysISO(iso, n) {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-function countOccurrences(startISO, endISO, dayIds) {
-  if (!dayIds.length) return 0;
-  const start = new Date(`${startISO}T00:00:00`);
-  const end = new Date(`${endISO}T00:00:00`);
-  if (end < start) return 0;
-  let n = 0;
-  const cur = new Date(start);
-  let guard = 0;
-  while (cur <= end && guard < 1000) {
-    guard++;
-    if (dayIds.includes(cur.getDay())) n++;
-    cur.setDate(cur.getDate() + 1);
-  }
-  return n;
-}
 
 export default function SubscribeScheduler() {
   return (
@@ -319,8 +299,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     () => (daysDisabled ? [new Date(`${date}T00:00:00`).getDay()] : days),
     [daysDisabled, date, days]
   );
-  const sessionCount =
-    endMode === "occurrences" ? occurrences : countOccurrences(date, endDate, effectiveDays);
+  const sessionCount = occurrences;
   const estimatedTotal = price * Math.max(sessionCount, 0);
 
   // attempt the real bill preview whenever the schedule changes meaningfully
@@ -339,7 +318,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
         schedule_time: time,
         is_recurring_enabled: true,
         cycle_type: preset_?.cycle ?? 0,
-        ...(endMode === "occurrences" ? { occurrence_count: String(occurrences) } : { end_schedule: endDate }),
+        occurrence_count: String(occurrences),
       };
       try {
         const res = await fetch(`${YELO_BASE}/get_bill_breakdown`, {
@@ -385,7 +364,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
       cancelled = true;
       clearTimeout(t);
     };
-  }, [days, date, time, endMode, endDate, occurrences, preset, daysDisabled, storeUserId, productId, price, session]);
+  }, [days, date, time, occurrences, preset, daysDisabled, storeUserId, productId, price, session]);
 
   const proceed = () => {
     // Populate the real, shared cart (single-merchant — the same `useCart()`
@@ -414,10 +393,8 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
       days: effectiveDays.join(","),
       start: date,
       time: time || times[0]?.value || "",
-      endMode,
+      occurrences: String(occurrences),
     });
-    if (endMode === "date") p.set("endDate", endDate);
-    else p.set("occurrences", String(occurrences));
     router.push(`/checkout?${p.toString()}`);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -496,26 +473,15 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
           <p className="sub-label">Ends</p>
           <div className="sub-end">
             <label className="sub-radio">
-              <input type="radio" name="end-mode" checked={endMode === "occurrences"} onChange={() => setEndMode("occurrences")} />
               After
               <input
                 type="number"
                 min="1"
                 className="sub-inline-number"
                 value={occurrences}
-                disabled={endMode !== "occurrences"}
                 onChange={(e) => setOccurrences(Math.max(1, Number(e.target.value) || 1))}
               />
               sessions
-            </label>
-            <label className="sub-radio sub-radio-date">
-              <span className="sub-radio-head">
-                <input type="radio" name="end-mode" checked={endMode === "date"} onChange={() => setEndMode("date")} />
-                On date
-              </span>
-              <span className="sub-inline-date">
-                <DatePicker value={endDate} min={date} onChange={setEndDate} disabled={endMode !== "date"} />
-              </span>
             </label>
           </div>
         </div>
@@ -529,7 +495,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
           <div><dt>Days</dt><dd>{effectiveDays.length ? effectiveDays.map((d) => DAY_NAMES[d]).join(", ") : "—"}</dd></div>
           <div><dt>Time</dt><dd>{timeLabel || "Not picked yet"}</dd></div>
           <div><dt>Starts</dt><dd>{date || "—"}</dd></div>
-          <div><dt>Ends</dt><dd>{endMode === "date" ? (endDate || "—") : `After ${occurrences} session${occurrences === 1 ? "" : "s"}`}</dd></div>
+          <div><dt>Ends</dt><dd>After {occurrences} session{occurrences === 1 ? "" : "s"}</dd></div>
           <div><dt>Sessions</dt><dd>{(realBill?.occurrences ?? sessionCount) || "—"}</dd></div>
         </dl>
         <div className="sub-price-row">
@@ -627,9 +593,6 @@ const css = `
 .sub-radio{ display:flex; align-items:center; gap:8px; font-size:.9rem; }
 .sub-radio input[type="radio"]{ accent-color:var(--brand-accent); }
 .sub-inline-number{ width:64px; padding:6px 8px; border:1px solid var(--brand-line); border-radius:8px; background:var(--brand-paper); color:var(--brand-ink); font:inherit; }
-.sub-radio-date{ align-items:flex-start; flex-direction:column; gap:8px; }
-.sub-radio-head{ display:flex; align-items:center; gap:8px; }
-.sub-inline-date{ padding-left:26px; max-width:240px; }
 
 .sub-summary{
   background:var(--card, var(--brand-surface));
