@@ -42,23 +42,28 @@ function EnrollHeaderInner({ eyebrow = "Confirm your subscription" }) {
     }
   }, []);
 
-  // Step 3 only once the flow is actually done (an order/rule id lands on the
-  // URL); otherwise the parent is on step 2, here on this screen.
+  // The checkout page runs two stages on one screen: "Schedule" (the subscribe
+  // scheduler) then "Details & payment". Stage 2 is active once a real time is
+  // locked in and the parent hasn't asked to come back and edit.
   const done = ["order", "order_id", "job_id", "rule_id", "enrolled"].some((k) => params.get(k));
-  const current = done ? 2 : 1;
+  const scheduled =
+    params.get("recurring") === "1" && !!params.get("time") && params.get("step") !== "schedule";
+  const current = done ? 2 : scheduled ? 1 : 0;
 
-  // "Schedule" (step 1) is a real step back to the class page's scheduler,
-  // carrying every choice the parent already made so nothing is re-picked.
-  const product = params.get("product") || params.get("id");
+  // "Schedule" (step 1) steps back to the scheduler at the top of this same
+  // page, carrying every choice already made so nothing is re-picked.
   let scheduleHref = null;
-  if (product && !done) {
-    const sp = new URLSearchParams({ id: product });
-    for (const k of ["frequency", "days", "start", "time", "endMode", "endDate", "occurrences"]) {
+  if (!done) {
+    const sp = new URLSearchParams();
+    for (const k of ["product", "id", "session", "frequency", "days", "start", "time", "occurrences"]) {
       const v = params.get(k);
       if (v) sp.set(k, v);
     }
-    scheduleHref = `/p/class?${sp.toString()}`;
+    sp.set("step", "schedule");
+    scheduleHref = `/checkout?${sp.toString()}`;
   }
+
+  const title = current === 0 ? "Set up your subscription" : eyebrow;
 
   return (
     <header className="ckh">
@@ -71,7 +76,7 @@ function EnrollHeaderInner({ eyebrow = "Confirm your subscription" }) {
           {tz && <span className="ckh-tz">Times shown in {tz}</span>}
         </div>
 
-        <h1 className="ckh-title">{eyebrow}</h1>
+        <h1 className="ckh-title">{title}</h1>
 
         <ol className="ckh-steps" aria-label="Checkout progress">
           {STEPS.map((s, i) => {
@@ -82,7 +87,7 @@ function EnrollHeaderInner({ eyebrow = "Confirm your subscription" }) {
                 <span className="ckh-step-label">{s}</span>
               </>
             );
-            const backable = i === 0 && scheduleHref;
+            const backable = i === 0 && i < current && scheduleHref;
             return (
               <li
                 key={s}
