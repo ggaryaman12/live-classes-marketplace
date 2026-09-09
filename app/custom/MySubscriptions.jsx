@@ -44,8 +44,22 @@ const YELO_TENANT = {
 const COORDS = { latitude: 28.61482, longitude: 77.219989 };
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const STATUS_LABEL = { 0: 'Pending', 1: 'Accepted', 2: 'Declined' };
-const STATUS_CLASS = { 0: 'pending', 1: 'accepted', 2: 'declined' };
+// The card badge should read as course PROGRESS, not the raw subscription
+// status: "In progress" while sessions remain, "Complete" once they're all
+// done. A course is complete when a session-capped rule has no remaining
+// occurrences, or a date-bounded rule's end date has passed. A declined
+// rule keeps its own label.
+function courseState(r) {
+  const remaining = Number(r.remaining_occurrence_count);
+  const total = Number(r.occurrence_count);
+  const endTs = r.end_schedule ? new Date(r.end_schedule).getTime() : NaN;
+  const done =
+    (Number(r.schedule_type) === 2 && total > 0 && remaining === 0) ||
+    (!Number.isNaN(endTs) && endTs < Date.now());
+  if (done) return { label: 'Complete', cls: 'complete' };
+  if (Number(r.status) === 2) return { label: 'Declined', cls: 'declined' };
+  return { label: 'In progress', cls: 'progress' };
+}
 
 function fmtDate(iso) {
   if (!iso) return null;
@@ -208,7 +222,9 @@ function ListView({ session }) {
 
   return (
     <ul className="ms-grid">
-      {rules.map((r) => (
+      {rules.map((r) => {
+       const cs = courseState(r);
+       return (
         <li key={r.rule_id} className="ms-card">
           <div className="ms-card-top">
             <div className="ms-card-who">
@@ -219,7 +235,7 @@ function ListView({ session }) {
               )}
               <span className="ms-card-id">Recurring #{r.rule_id}</span>
             </div>
-            <span className={`ms-badge ms-badge-${STATUS_CLASS[r.status] || 'pending'}`}>{STATUS_LABEL[r.status] || 'Pending'}</span>
+            <span className={`ms-badge ms-badge-${cs.cls}`}>{cs.label}</span>
           </div>
           <dl className="ms-card-facts">
             <div><dt>Amount</dt><dd>₹{Number(r.amount || 0).toLocaleString()}</dd></div>
@@ -231,7 +247,8 @@ function ListView({ session }) {
           </dl>
           <Link href={`?rule=${r.rule_id}`} className="ms-view">View details →</Link>
         </li>
-      ))}
+       );
+      })}
     </ul>
   );
 }
@@ -313,7 +330,7 @@ function Detail({ ruleId, session }) {
       <Link href="?" className="ms-back">← All courses</Link>
       <div className="ms-detail-top">
         <h2>{className || 'Class subscription'}</h2>
-        <span className={`ms-badge ms-badge-${STATUS_CLASS[rule.status] || 'pending'}`}>{STATUS_LABEL[rule.status] || 'Pending'}</span>
+        {(() => { const cs = courseState(rule); return <span className={`ms-badge ms-badge-${cs.cls}`}>{cs.label}</span>; })()}
       </div>
       <p className="ms-detail-sub">with {rule.merchant_name || 'the teacher'} · Recurring #{rule.rule_id}</p>
 
@@ -472,9 +489,9 @@ const css = `
 .ms-view:hover{ text-decoration:underline; }
 
 .ms-badge{ padding:3px 10px; border-radius:980px; font-size:.7rem; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
-.ms-badge-pending{ background:var(--brand-accent-soft); color:var(--brand-accent); }
-.ms-badge-accepted{ background:color-mix(in srgb, #2f9e5f 18%, transparent); color:#1c7a45; }
-[data-theme="dark"] .ms-badge-accepted{ color:#6fdb9c; }
+.ms-badge-progress{ background:var(--brand-accent-soft); color:var(--brand-accent); }
+.ms-badge-complete{ background:color-mix(in srgb, #2f9e5f 18%, transparent); color:#1c7a45; }
+[data-theme="dark"] .ms-badge-complete{ color:#6fdb9c; }
 .ms-badge-declined{ background:color-mix(in srgb, #c0392b 16%, transparent); color:#a4322a; }
 [data-theme="dark"] .ms-badge-declined{ color:#ef8f86; }
 
