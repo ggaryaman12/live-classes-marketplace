@@ -188,7 +188,6 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     window.addEventListener("yelo-session", onChange);
     return () => window.removeEventListener("yelo-session", onChange);
   }, []);
-  const [mode, setMode] = useState("subscribe"); // instant | subscribe
   const [preset, setPreset] = useState("everyday");
   const [days, setDays] = useState(PRESETS[0].days);
   const [date, setDate] = useState(todayISO());
@@ -203,7 +202,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   const [realBill, setRealBill] = useState(null); // { perSession, occurrences, total } from a real get_bill_breakdown
 
   useEffect(() => {
-    if (mode !== "subscribe" || !storeUserId) return;
+    if (!storeUserId) return;
     let cancelled = false;
     async function load() {
       setSlotState("loading");
@@ -276,7 +275,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     return () => {
       cancelled = true;
     };
-  }, [mode, date, storeUserId, session]);
+  }, [date, storeUserId, session]);
 
   // If the selected time falls out of the list (e.g. it already passed once
   // the real/fallback slots were filtered), drop the stale selection instead
@@ -312,7 +311,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
 
   // attempt the real bill preview whenever the schedule changes meaningfully
   useEffect(() => {
-    if (mode !== "subscribe" || !days.length || !time) {
+    if (!days.length || !time) {
       setBillState("idle");
       return;
     }
@@ -372,7 +371,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
       cancelled = true;
       clearTimeout(t);
     };
-  }, [mode, days, date, time, endMode, endDate, occurrences, preset, daysDisabled, storeUserId, productId, price, session]);
+  }, [days, date, time, endMode, endDate, occurrences, preset, daysDisabled, storeUserId, productId, price, session]);
 
   const proceed = () => {
     // Populate the real, shared cart (single-merchant — the same `useCart()`
@@ -394,10 +393,6 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
     );
     setQty(productId, 1);
 
-    if (mode !== "subscribe") {
-      router.push(`/checkout?product=${productId}`);
-      return;
-    }
     const p = new URLSearchParams({
       product: String(productId),
       recurring: "1",
@@ -413,145 +408,125 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   };
 
   return (
-    <div className="bell-sub" aria-label="Set your preference">
+    <div className="bell-sub" aria-label="Set up your subscription">
       <div className="sub-main">
         <div className="sub-head">
           <p className="sub-eyebrow">Enroll {productName ? `in ${productName}` : "in this class"}</p>
-          <h3>Set your preference</h3>
-          <div className="sub-mode" role="tablist" aria-label="Order type">
-            <button type="button" role="tab" aria-selected={mode === "instant"} data-on={mode === "instant"} onClick={() => setMode("instant")}>
-              Instant order
-            </button>
-            <button type="button" role="tab" aria-selected={mode === "subscribe"} data-on={mode === "subscribe"} onClick={() => setMode("subscribe")}>
-              Subscribe
-            </button>
+          <h3>Set up your subscription</h3>
+          <p className="sub-sub">Pick how often it runs, which days and time, and when it ends. You confirm and pay on the next screen.</p>
+        </div>
+
+        <div className="sub-block">
+          <p className="sub-label">Frequency</p>
+          <div className="sub-presets" role="tablist" aria-label="Frequency">
+            {PRESETS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                role="tab"
+                aria-selected={preset === p.key}
+                data-on={preset === p.key}
+                onClick={() => applyPreset(p)}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {mode === "subscribe" && (
-          <>
-            <div className="sub-block">
-              <p className="sub-label">Frequency</p>
-              <div className="sub-presets" role="tablist" aria-label="Frequency">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={preset === p.key}
-                    data-on={preset === p.key}
-                    onClick={() => applyPreset(p)}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+        <div className="sub-block">
+          <p className="sub-label">{daysDisabled ? "Anchor day" : "Days of the week"}</p>
+          <div className="sub-days" aria-label="Days of the week">
+            {DAY_LETTERS.map((l, i) => (
+              <button
+                key={i}
+                type="button"
+                data-on={effectiveDays.includes(i)}
+                disabled={daysDisabled}
+                onClick={() => toggleDay(i)}
+                aria-pressed={effectiveDays.includes(i)}
+                aria-label={["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][i]}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+          {daysDisabled && <p className="sub-hint">Repeats {preset === "fortnight" ? "every 14 days" : "on this date each month"} from your start date.</p>}
+        </div>
 
-            <div className="sub-block">
-              <p className="sub-label">{daysDisabled ? "Anchor day" : "Days of the week"}</p>
-              <div className="sub-days" aria-label="Days of the week">
-                {DAY_LETTERS.map((l, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    data-on={effectiveDays.includes(i)}
-                    disabled={daysDisabled}
-                    onClick={() => toggleDay(i)}
-                    aria-pressed={effectiveDays.includes(i)}
-                    aria-label={["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][i]}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
-              {daysDisabled && <p className="sub-hint">Repeats {preset === "fortnight" ? "every 14 days" : "on this date each month"} from your start date.</p>}
-            </div>
-
-            <div className="sub-grid">
-              <div className="sub-field">
-                <DatePicker label="📅 Start date" value={date} min={todayISO()} onChange={setDate} />
-              </div>
-              <label className="sub-field">
-                <span>🕓 Time <i>({slotState === "real" ? "live" : slotState === "empty" ? "none left today" : "typical"})</i></span>
-                <select value={time} onChange={(e) => setTime(e.target.value)} disabled={slotState === "empty"}>
-                  <option value="" disabled>{slotState === "empty" ? "No times left" : "Choose…"}</option>
-                  {times.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {slotState === "fallback" && (
-              <p className="sub-note">Sign in to see this teacher's real open times — showing typical hours for now.</p>
-            )}
-            {slotState === "empty" && (
-              <p className="sub-note">This teacher has no more openings today — pick another date to see times.</p>
-            )}
-
-            <div className="sub-block">
-              <p className="sub-label">Ends</p>
-              <div className="sub-end">
-                <label className="sub-radio">
-                  <input type="radio" name="end-mode" checked={endMode === "occurrences"} onChange={() => setEndMode("occurrences")} />
-                  After
-                  <input
-                    type="number"
-                    min="1"
-                    className="sub-inline-number"
-                    value={occurrences}
-                    disabled={endMode !== "occurrences"}
-                    onChange={(e) => setOccurrences(Math.max(1, Number(e.target.value) || 1))}
-                  />
-                  sessions
-                </label>
-                <label className="sub-radio sub-radio-date">
-                  <span className="sub-radio-head">
-                    <input type="radio" name="end-mode" checked={endMode === "date"} onChange={() => setEndMode("date")} />
-                    On date
-                  </span>
-                  <span className="sub-inline-date">
-                    <DatePicker value={endDate} min={date} onChange={setEndDate} disabled={endMode !== "date"} />
-                  </span>
-                </label>
-              </div>
-            </div>
-          </>
+        <div className="sub-grid">
+          <div className="sub-field">
+            <DatePicker label="📅 Start date" value={date} min={todayISO()} onChange={setDate} />
+          </div>
+          <label className="sub-field">
+            <span>🕓 Time <i>({slotState === "real" ? "live" : slotState === "empty" ? "none left today" : "typical"})</i></span>
+            <select value={time} onChange={(e) => setTime(e.target.value)} disabled={slotState === "empty"}>
+              <option value="" disabled>{slotState === "empty" ? "No times left" : "Choose…"}</option>
+              {times.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {slotState === "fallback" && (
+          <p className="sub-note">Sign in to see this teacher's real open times — showing typical hours for now.</p>
         )}
+        {slotState === "empty" && (
+          <p className="sub-note">This teacher has no more openings today — pick another date to see times.</p>
+        )}
+
+        <div className="sub-block">
+          <p className="sub-label">Ends</p>
+          <div className="sub-end">
+            <label className="sub-radio">
+              <input type="radio" name="end-mode" checked={endMode === "occurrences"} onChange={() => setEndMode("occurrences")} />
+              After
+              <input
+                type="number"
+                min="1"
+                className="sub-inline-number"
+                value={occurrences}
+                disabled={endMode !== "occurrences"}
+                onChange={(e) => setOccurrences(Math.max(1, Number(e.target.value) || 1))}
+              />
+              sessions
+            </label>
+            <label className="sub-radio sub-radio-date">
+              <span className="sub-radio-head">
+                <input type="radio" name="end-mode" checked={endMode === "date"} onChange={() => setEndMode("date")} />
+                On date
+              </span>
+              <span className="sub-inline-date">
+                <DatePicker value={endDate} min={date} onChange={setEndDate} disabled={endMode !== "date"} />
+              </span>
+            </label>
+          </div>
+        </div>
       </div>
 
       <aside className="sub-summary">
-        <p className="sub-summary-kind">{mode === "subscribe" ? "Subscription summary" : "One-time class"}</p>
-        {mode === "subscribe" ? (
-          <>
-            <dl className="sub-summary-grid">
-              <div><dt>Days</dt><dd>{effectiveDays.length ? effectiveDays.map((d) => DAY_NAMES[d]).join(", ") : "—"}</dd></div>
-              <div><dt>Time</dt><dd>{time ? times.find((t) => t.value === time)?.label || time : "—"}</dd></div>
-              <div><dt>Sessions</dt><dd>{(realBill?.occurrences ?? sessionCount) || "—"}</dd></div>
-            </dl>
-            <div className="sub-price-row">
-              <span>
-                {realBill ? `₹${realBill.perSession.toLocaleString()} × ${realBill.occurrences}` : price ? `₹${price.toLocaleString()} × ${sessionCount}` : "—"}
-              </span>
-              <b>{realBill ? `₹${realBill.total.toLocaleString()}` : price ? `₹${estimatedTotal.toLocaleString()}` : "—"}</b>
-            </div>
-            <p className="sub-price-tag">
-              {billState === "loading" ? "Checking exact price…"
-                : billState === "real" ? "Exact total from the real bill"
-                // Once signed in, a stuck "estimate" isn't an auth problem —
-                // telling a signed-in parent to "sign in" for the real total
-                // is just wrong, not merely imprecise.
-                : session ? "Estimated — exact total confirms at checkout"
-                : "Estimated — sign in for the exact total"}
-            </p>
-          </>
-        ) : (
-          <div className="sub-price-row">
-            <span>Per session</span>
-            <b>{price ? `₹${price.toLocaleString()}` : "—"}</b>
-          </div>
-        )}
-        {mode === "subscribe" && slotState === "fallback" && (
+        <p className="sub-summary-kind">Subscription summary</p>
+        <dl className="sub-summary-grid">
+          <div><dt>Days</dt><dd>{effectiveDays.length ? effectiveDays.map((d) => DAY_NAMES[d]).join(", ") : "—"}</dd></div>
+          <div><dt>Time</dt><dd>{time ? times.find((t) => t.value === time)?.label || time : "—"}</dd></div>
+          <div><dt>Sessions</dt><dd>{(realBill?.occurrences ?? sessionCount) || "—"}</dd></div>
+        </dl>
+        <div className="sub-price-row">
+          <span>
+            {realBill ? `₹${realBill.perSession.toLocaleString()} × ${realBill.occurrences}` : price ? `₹${price.toLocaleString()} × ${sessionCount}` : "—"}
+          </span>
+          <b>{realBill ? `₹${realBill.total.toLocaleString()}` : price ? `₹${estimatedTotal.toLocaleString()}` : "—"}</b>
+        </div>
+        <p className="sub-price-tag">
+          {billState === "loading" ? "Checking exact price…"
+            : billState === "real" ? "Exact total from the real bill"
+            // Once signed in, a stuck "estimate" isn't an auth problem —
+            // telling a signed-in parent to "sign in" for the real total
+            // is just wrong, not merely imprecise.
+            : session ? "Estimated — exact total confirms at checkout"
+            : "Estimated — sign in for the exact total"}
+        </p>
+        {slotState === "fallback" && (
           <p className="sub-note">These are typical hours, not this teacher's real slots — sign in to pick a bookable time before subscribing.</p>
         )}
         <button
@@ -563,7 +538,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
           // slots exactly, so a subscription built on a guess is rejected at
           // save time ("Order date time is not available") instead of here,
           // where it's still fixable. Block it before that happens.
-          disabled={mode === "subscribe" && (!days.length || !time || slotState === "fallback")}
+          disabled={!days.length || !time || slotState === "fallback"}
         >
           Proceed to pay
         </button>
@@ -587,12 +562,7 @@ const css = `
 .sub-head{ display:grid; gap:10px; }
 .sub-eyebrow{ margin:0; font-size:.78rem; font-weight:600; color:var(--brand-ink-soft); }
 .sub-head h3{ margin:0; font-family:var(--brand-font-display); font-weight:600; font-size:1.35rem; }
-.sub-mode{ display:inline-flex; padding:4px; border-radius:980px; background:var(--brand-paper); border:1px solid var(--brand-line); width:fit-content; }
-.sub-mode button{
-  border:0; background:transparent; color:var(--brand-ink-soft); font:inherit; font-weight:600; font-size:.86rem;
-  padding:9px 18px; border-radius:980px; cursor:pointer; transition:background var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease);
-}
-.sub-mode button[data-on="true"]{ background:var(--brand-ink); color:var(--brand-accent-ink); }
+.sub-sub{ margin:0; font-size:.86rem; line-height:1.5; color:var(--brand-ink-soft); max-width:44ch; }
 
 .sub-block{ display:grid; gap:10px; }
 .sub-label{ margin:0; font-size:.76rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--brand-ink-soft); }
