@@ -47,6 +47,19 @@ function EnrollHeaderInner({ eyebrow = "Confirm your subscription" }) {
   const done = ["order", "order_id", "job_id", "rule_id", "enrolled"].some((k) => params.get(k));
   const current = done ? 2 : 1;
 
+  // "Schedule" (step 1) is a real step back to the class page's scheduler,
+  // carrying every choice the parent already made so nothing is re-picked.
+  const product = params.get("product") || params.get("id");
+  let scheduleHref = null;
+  if (product && !done) {
+    const sp = new URLSearchParams({ id: product });
+    for (const k of ["frequency", "days", "start", "time", "endMode", "endDate", "occurrences"]) {
+      const v = params.get(k);
+      if (v) sp.set(k, v);
+    }
+    scheduleHref = `/p/class?${sp.toString()}`;
+  }
+
   return (
     <header className="ckh">
       <div className="ckh-frame">
@@ -61,17 +74,31 @@ function EnrollHeaderInner({ eyebrow = "Confirm your subscription" }) {
         <h1 className="ckh-title">{eyebrow}</h1>
 
         <ol className="ckh-steps" aria-label="Checkout progress">
-          {STEPS.map((s, i) => (
-            <li
-              key={s}
-              className="ckh-step"
-              data-state={i < current ? "past" : i === current ? "current" : "next"}
-              aria-current={i === current ? "step" : undefined}
-            >
-              <span className="ckh-dot">{i < current ? "✓" : i + 1}</span>
-              <span className="ckh-step-label">{s}</span>
-            </li>
-          ))}
+          {STEPS.map((s, i) => {
+            const state = i < current ? "past" : i === current ? "current" : "next";
+            const inner = (
+              <>
+                <span className="ckh-dot">{i < current ? "✓" : i + 1}</span>
+                <span className="ckh-step-label">{s}</span>
+              </>
+            );
+            const backable = i === 0 && scheduleHref;
+            return (
+              <li
+                key={s}
+                className="ckh-step"
+                data-state={state}
+                data-link={backable ? "1" : undefined}
+                aria-current={i === current ? "step" : undefined}
+              >
+                {backable ? (
+                  <Link href={scheduleHref} className="ckh-step-inner">{inner}</Link>
+                ) : (
+                  <span className="ckh-step-inner">{inner}</span>
+                )}
+              </li>
+            );
+          })}
         </ol>
       </div>
       <style>{css}</style>
@@ -113,7 +140,15 @@ const css = `
   list-style:none; margin:0; padding:0;
   display:flex; flex-wrap:wrap; gap:8px 18px;
 }
-.ckh-step{ display:inline-flex; align-items:center; gap:8px; font-size:.83rem; font-weight:600; }
+.ckh-step{ display:inline-flex; align-items:center; font-size:.83rem; font-weight:600; }
+.ckh-step-inner{
+  display:inline-flex; align-items:center; gap:8px;
+  color:inherit; text-decoration:none; border-radius:980px;
+}
+.ckh-step[data-link="1"] .ckh-step-inner{ cursor:pointer; }
+.ckh-step[data-link="1"] .ckh-step-label{ text-decoration:underline; text-underline-offset:3px; text-decoration-color:color-mix(in srgb, var(--brand-accent) 45%, transparent); }
+.ckh-step[data-link="1"] .ckh-step-inner:hover .ckh-step-label{ color:var(--brand-accent); text-decoration-color:var(--brand-accent); }
+.ckh-step-inner:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
 .ckh-dot{
   width:22px; height:22px; border-radius:50%; flex:none;
   display:grid; place-items:center; font-size:.72rem;
