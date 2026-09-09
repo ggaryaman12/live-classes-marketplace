@@ -337,6 +337,8 @@ function Detail({ ruleId, session }) {
 }
 
 function SessionSchedule({ state, sessions }) {
+  const [tab, setTab] = useState('upcoming'); // upcoming | completed
+
   if (state === 'loading') {
     return (
       <div className="ms-sessions" aria-busy="true">
@@ -354,61 +356,98 @@ function SessionSchedule({ state, sessions }) {
     );
   }
 
-  const { upcoming, completed } = sessions;
+  const upcoming = sessions.upcoming || [];
+  const completed = sessions.completed || [];
+  const rows = tab === 'upcoming' ? upcoming : completed;
+  const emptyText = tab === 'upcoming'
+    ? 'No upcoming classes — every session in this course is done.'
+    : "No completed classes yet — the course hasn't started.";
 
   return (
     <div className="ms-sessions">
-      <SessionGroup
-        title="Upcoming classes"
-        count={upcoming.length}
-        rows={upcoming}
-        emptyText="No upcoming classes — every session in this course is done."
-        tone="upcoming"
-      />
-      <SessionGroup
-        title="Completed classes"
-        count={completed.length}
-        rows={completed}
-        emptyText="No completed classes yet — the course hasn't started."
-        tone="completed"
-      />
+      <h3 className="ms-sessions-h">Class schedule</h3>
+      <div className="ms-tabs" role="tablist" aria-label="Class schedule">
+        <button
+          type="button"
+          role="tab"
+          id="ms-tab-upcoming"
+          aria-selected={tab === 'upcoming'}
+          aria-controls="ms-panel-sessions"
+          className={`ms-tab${tab === 'upcoming' ? ' is-active' : ''}`}
+          onClick={() => setTab('upcoming')}
+        >
+          Upcoming <span className="ms-tab-count">{upcoming.length}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="ms-tab-completed"
+          aria-selected={tab === 'completed'}
+          aria-controls="ms-panel-sessions"
+          className={`ms-tab${tab === 'completed' ? ' is-active' : ''}`}
+          onClick={() => setTab('completed')}
+        >
+          Completed <span className="ms-tab-count">{completed.length}</span>
+        </button>
+      </div>
+
+      <div
+        id="ms-panel-sessions"
+        role="tabpanel"
+        aria-labelledby={tab === 'upcoming' ? 'ms-tab-upcoming' : 'ms-tab-completed'}
+        className="ms-tabpanel"
+      >
+        {rows.length === 0 ? (
+          <p className="ms-sgroup-empty">{emptyText}</p>
+        ) : (
+          <ol className={`ms-slist ms-slist-${tab}`}>
+            {rows.map((s, i) => (
+              <SessionRow key={`${s.session}-${s.date}-${i}`} s={s} kind={tab} />
+            ))}
+          </ol>
+        )}
+      </div>
     </div>
   );
 }
 
-function SessionGroup({ title, count, rows, emptyText, tone }) {
+function SessionRow({ s, kind }) {
+  const time = fmtTime(s.start_time);
+  const end = fmtTime(s.end_time);
+  const skipped = !!s.is_skipped;
+  const isUpcoming = kind === 'upcoming';
+
   return (
-    <div className={`ms-sgroup ms-sgroup-${tone}`}>
-      <div className="ms-sgroup-head">
-        <h3>{title}</h3>
-        <span className="ms-sgroup-count">{count}</span>
-      </div>
-      {rows.length === 0 ? (
-        <p className="ms-sgroup-empty">{emptyText}</p>
+    <li className={`ms-srow${skipped ? ' is-skipped' : ''}`}>
+      <span className="ms-snum" aria-hidden="true">{s.session}<i>/{s.total_sessions}</i></span>
+      <span className="ms-sbody">
+        <span className="ms-sdate">Session {s.session} · {fmtDate(s.date) || s.date}</span>
+        <span className="ms-smeta">
+          {time ? (end ? `${time} – ${end}` : time) : 'Time to be confirmed'}
+          {skipped ? ' · Skipped' : ''}
+        </span>
+      </span>
+
+      {isUpcoming ? (
+        skipped ? (
+          <span className="ms-slink ms-slink-skipped">Skipped</span>
+        ) : s.meeting_link ? (
+          <a className="ms-slink ms-slink-join" href={s.meeting_link} target="_blank" rel="noreferrer">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h5A1.5 1.5 0 0 1 10 4.5V6l3-1.8v7.6L10 10v1.5A1.5 1.5 0 0 1 8.5 13h-5A1.5 1.5 0 0 1 2 11.5z" fill="currentColor"/></svg>
+            Join class
+          </a>
+        ) : (
+          <span className="ms-slink ms-slink-wait" title="The teacher hasn't shared the meeting link for this session yet.">
+            Link not shared yet
+          </span>
+        )
       ) : (
-        <ol className="ms-slist">
-          {rows.map((s, i) => {
-            const time = fmtTime(s.start_time);
-            const end = fmtTime(s.end_time);
-            return (
-              <li key={`${s.session}-${s.date}-${i}`} className={`ms-srow${s.is_skipped ? ' is-skipped' : ''}`}>
-                <span className="ms-snum">{s.session}<i>/{s.total_sessions}</i></span>
-                <span className="ms-sbody">
-                  <span className="ms-sdate">{fmtDate(s.date) || s.date}</span>
-                  <span className="ms-smeta">
-                    {time ? (end ? `${time} – ${end}` : time) : 'Time to be confirmed'}
-                    {s.is_skipped ? ' · Skipped' : ''}
-                  </span>
-                </span>
-                {s.meeting_link && !s.is_skipped && (
-                  <a className="ms-sjoin" href={s.meeting_link} target="_blank" rel="noreferrer">Join</a>
-                )}
-              </li>
-            );
-          })}
-        </ol>
+        <span className="ms-slink ms-slink-done" aria-label="Class completed">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          Done
+        </span>
       )}
-    </div>
+    </li>
   );
 }
 
@@ -461,23 +500,44 @@ const css = `
 
 @media (prefers-reduced-motion: reduce){ .ms-skel-line, .ms-name-skel{ animation:none; } }
 
-.ms-sessions{ margin-top:22px; padding-top:20px; border-top:1px solid var(--brand-line); display:grid; gap:22px; }
+.ms-sessions{ margin-top:22px; padding-top:20px; border-top:1px solid var(--brand-line); display:grid; gap:14px; }
 .ms-sessions-err{ margin:0; color:var(--brand-ink-soft); font-size:.86rem; }
-.ms-sgroup-head{ display:flex; align-items:center; gap:8px; margin-bottom:10px; }
-.ms-sgroup-head h3{ margin:0; font-family:var(--brand-font-display); font-weight:650; font-size:.98rem; }
-.ms-sgroup-count{ min-width:22px; height:22px; padding:0 6px; display:inline-grid; place-items:center; border-radius:980px; font-size:.72rem; font-weight:700; background:var(--brand-accent-soft); color:var(--brand-accent); }
-.ms-sgroup-completed .ms-sgroup-count{ background:color-mix(in srgb, var(--brand-ink-soft) 16%, transparent); color:var(--brand-ink-soft); }
-.ms-sgroup-empty{ margin:0; color:var(--brand-ink-soft); font-size:.84rem; }
+.ms-sessions-h{ margin:0; font-family:var(--brand-font-display); font-weight:650; font-size:1rem; }
+
+.ms-tabs{ display:inline-flex; gap:4px; padding:4px; border:1px solid var(--brand-line); border-radius:980px; background:var(--brand-paper); align-self:start; }
+.ms-tab{ appearance:none; border:0; cursor:pointer; display:inline-flex; align-items:center; gap:7px; padding:8px 16px; border-radius:980px; background:transparent; color:var(--brand-ink-soft); font-family:var(--brand-font-body); font-weight:650; font-size:.82rem; transition:background var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease); }
+.ms-tab:hover{ color:var(--brand-ink); }
+.ms-tab.is-active{ background:var(--brand-surface); color:var(--brand-ink); box-shadow:0 1px 3px color-mix(in srgb, var(--brand-ink) 14%, transparent); }
+.ms-tab.is-active:focus-visible, .ms-tab:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
+.ms-tab-count{ min-width:20px; height:18px; padding:0 5px; display:inline-grid; place-items:center; border-radius:980px; font-size:.68rem; font-weight:700; background:var(--brand-accent-soft); color:var(--brand-accent); }
+.ms-tab.is-active .ms-tab-count{ background:var(--brand-accent); color:var(--brand-accent-ink); }
+
+.ms-tabpanel{ margin-top:2px; }
+.ms-sgroup-empty{ margin:0; padding:16px 12px; color:var(--brand-ink-soft); font-size:.84rem; border:1px dashed var(--brand-line); border-radius:var(--radius); }
 
 .ms-slist{ list-style:none; margin:0; padding:0; display:grid; gap:8px; }
-.ms-srow{ display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--brand-line); border-radius:var(--radius); background:var(--brand-paper); }
-.ms-srow.is-skipped{ opacity:.6; }
+.ms-srow{ display:flex; align-items:center; gap:12px; padding:11px 12px; border:1px solid var(--brand-line); border-radius:var(--radius); background:var(--brand-paper); }
+.ms-srow.is-skipped{ opacity:.55; }
 .ms-snum{ flex:none; width:38px; height:38px; border-radius:50%; display:grid; place-items:center; background:var(--brand-accent-soft); color:var(--brand-accent); font-weight:700; font-size:.86rem; line-height:1; }
 .ms-snum i{ font-style:normal; font-size:.62rem; opacity:.7; }
-.ms-sgroup-completed .ms-snum{ background:color-mix(in srgb, var(--brand-ink-soft) 14%, transparent); color:var(--brand-ink-soft); }
+.ms-slist-completed .ms-snum{ background:color-mix(in srgb, var(--brand-ink-soft) 14%, transparent); color:var(--brand-ink-soft); }
 .ms-sbody{ display:grid; gap:2px; min-width:0; flex:1; }
 .ms-sdate{ font-weight:600; font-size:.86rem; }
 .ms-smeta{ font-size:.76rem; color:var(--brand-ink-soft); }
-.ms-sjoin{ flex:none; padding:6px 14px; border-radius:980px; background:var(--brand-accent); color:var(--brand-accent-ink); font-weight:650; font-size:.78rem; text-decoration:none; }
-.ms-sjoin:hover{ filter:brightness(1.06); }
+
+.ms-slink{ flex:none; display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:980px; font-weight:650; font-size:.78rem; text-decoration:none; white-space:nowrap; }
+.ms-slink svg{ width:14px; height:14px; }
+.ms-slink-join{ background:var(--brand-accent); color:var(--brand-accent-ink); }
+.ms-slink-join:hover{ filter:brightness(1.06); }
+.ms-slink-join:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
+.ms-slink-wait{ background:transparent; border:1px dashed var(--brand-line); color:var(--brand-ink-soft); cursor:default; }
+.ms-slink-skipped{ background:transparent; border:1px solid var(--brand-line); color:var(--brand-ink-soft); }
+.ms-slink-done{ background:transparent; color:var(--brand-ink-soft); padding-inline:6px; }
+
+@media (max-width:520px){
+  .ms-srow{ flex-wrap:wrap; }
+  .ms-sbody{ flex-basis:calc(100% - 50px); }
+  .ms-slink{ margin-left:50px; }
+}
+@media (prefers-reduced-motion: reduce){ .ms-tab{ transition:none; } }
 `;
