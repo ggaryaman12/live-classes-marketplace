@@ -1,0 +1,63 @@
+{
+  "format": "yelo-studio-export/1",
+  "sourceTenantId": "510012362__live-classes-markeptlace-2",
+  "standalone": true,
+  "managed": {
+    "pages": "data/tenants/510012362__live-classes-markeptlace-2/pages",
+    "shell": "app/components",
+    "sections": "app/custom",
+    "tokens": "app/custom/tokens.css"
+  },
+  "wrote": {
+    "components": [
+      "AuthModal.jsx",
+      "BillLines.jsx",
+      "CartSheet.jsx",
+      "Catalogue.jsx",
+      "CheckoutPanel.jsx",
+      "EntrySequence.jsx",
+      "Header.jsx",
+      "Hero3DSection.jsx",
+      "HeroScene.jsx",
+      "OrderReceipt.jsx",
+      "StoreCard.jsx",
+      "StoreHeader.jsx"
+    ],
+    "custom": [
+      "BellHero.jsx",
+      "ClassCheckout.jsx",
+      "ClassDetail.jsx",
+      "ClassSearch.jsx",
+      "DatePicker.jsx",
+      "EnrollConfirm.jsx",
+      "EnrollHeader.jsx",
+      "HowLiveWorks.jsx",
+      "LiveCatalogue.jsx",
+      "MeetTheInstructor.jsx",
+      "MyCoursesLink.jsx",
+      "MySubscriptions.jsx",
+      "RecurringSummary.jsx",
+      "SearchHero.jsx",
+      "StartingThisWeek.jsx",
+      "SubjectTiles.jsx",
+      "SubscribeScheduler.jsx",
+      "SubscriptionConfirm.jsx",
+      "TeacherApproach.jsx",
+      "TeacherDirectory.jsx",
+      "TeacherEditorial.jsx",
+      "TeacherFAQ.jsx",
+      "TeacherTrust.jsx",
+      "TrustStrip.jsx",
+      "UpcomingClasses.jsx",
+      "WhatParentsSay.jsx"
+    ],
+    "pages": [
+      "checkout.tree.json",
+      "class.tree.json",
+      "landing.tree.json",
+      "merchant-listing.tree.json",
+      "my-subscriptions.tree.json",
+      "store.tree.json"
+    ]
+  }
+}
