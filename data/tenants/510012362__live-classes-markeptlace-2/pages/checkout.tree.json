@@ -10,9 +10,7 @@
       "children": [
         "enroll",
         "recurringSummary",
-        "checkout1",
-        "bill",
-        "confirm"
+        "checkout1"
       ]
     },
     "enroll": {
@@ -20,7 +18,7 @@
       "type": "Custom",
       "props": {
         "component": "EnrollHeader",
-        "eyebrow": "Enrolling in one live session"
+        "eyebrow": "Confirm your subscription"
       }
     },
     "recurringSummary": {
@@ -28,7 +26,7 @@
       "type": "Custom",
       "props": {
         "component": "RecurringSummary",
-        "heading": "Your subscription"
+        "heading": "Your schedule"
       }
     },
     "checkout1": {
@@ -36,7 +34,7 @@
       "type": "Custom",
       "props": {
         "component": "ClassCheckout",
-        "title": "Confirm enrollment",
+        "title": "Confirm & pay",
         "paymentLabel": "How you’ll pay",
         "summaryLabel": "Your enrollment",
         "ctaLabel": "Confirm & enroll",
@@ -45,26 +43,6 @@
       },
       "bind": {
         "source": "get_bill_breakdown"
-      }
-    },
-    "bill": {
-      "id": "bill",
-      "type": "BillBreakdown",
-      "props": {
-        "totalLabel": "Total due today",
-        "showTotal": true
-      },
-      "bind": {
-        "source": "get_bill_breakdown"
-      }
-    },
-    "confirm": {
-      "id": "confirm",
-      "type": "Custom",
-      "props": {
-        "component": "EnrollConfirm",
-        "previewHeading": "The moment you confirm",
-        "doneHeading": "Enrolled."
       }
     }
   }
