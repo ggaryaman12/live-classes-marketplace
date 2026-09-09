@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 
 /**
  * RecurringSummary — shows on checkout when arriving from the class page's
- * Subscribe scheduler (?recurring=1&days=...&start=...&time=...&endMode=...).
+ * Subscribe scheduler (?recurring=1&days=...&start=...&time=...&occurrences=...).
  * Purely a recap of the schedule the parent picked, above the real
  * CheckoutPanel/BillBreakdown — informational only. Completing a real
  * subscription (`recurring/saveRecurringTask`) requires a signed-in
@@ -28,7 +28,11 @@ function RecurringSummaryInner({
   heading = "Your subscription",
 }) {
   const params = useSearchParams();
-  if (params.get("recurring") !== "1") return null;
+  // Only in stage 2 (details & payment) — while the scheduler is still up top
+  // (no time yet, or the parent stepped back to edit) this recap is noise.
+  if (params.get("recurring") !== "1" || !params.get("time") || params.get("step") === "schedule") {
+    return null;
+  }
 
   const days = (params.get("days") || "")
     .split(",")
@@ -39,17 +43,10 @@ function RecurringSummaryInner({
     .join(", ");
   const start = params.get("start");
   const time = params.get("time");
-  const endMode = params.get("endMode");
-  const endDate = params.get("endDate");
   const occurrences = params.get("occurrences");
   const frequency = params.get("frequency");
 
-  const endLabel =
-    endMode === "occurrences"
-      ? `Ends after ${occurrences} session${occurrences === "1" ? "" : "s"}`
-      : endDate
-        ? `Ends ${endDate}`
-        : null;
+  const endLabel = occurrences ? `Ends after ${occurrences} session${occurrences === "1" ? "" : "s"}` : null;
 
   return (
     <section className="bell-rs" aria-labelledby="bell-rs-h">
