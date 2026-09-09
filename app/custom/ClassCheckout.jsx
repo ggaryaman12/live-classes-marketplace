@@ -57,6 +57,7 @@
  * the browser, no proxy needed.
  */
 import { Suspense, useEffect, useState, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCart } from '../lib/cart';
 import { getSession, setSession as saveSession } from '../lib/session';
@@ -158,6 +159,19 @@ function ClassCheckoutInner({
   const recurringEndDate = params.get('endDate') || '';
   const recurringOccurrences = params.get('occurrences') || '';
   const usesRecurringApi = isSubscription && RECURRING_PAYMENT_METHODS.includes(pay);
+
+  // Back to the class-page scheduler with every choice preserved, so "Edit"
+  // on the schedule recap round-trips instead of resetting the form.
+  const productParam = params.get('product') || params.get('id');
+  let scheduleHref = null;
+  if (productParam) {
+    const sp = new URLSearchParams({ id: productParam });
+    for (const k of ['frequency', 'days', 'start', 'time', 'endMode', 'endDate', 'occurrences']) {
+      const v = params.get(k);
+      if (v) sp.set(k, v);
+    }
+    scheduleHref = `/p/class?${sp.toString()}`;
+  }
 
   useEffect(() => {
     const s = getSession();
@@ -511,17 +525,27 @@ function ClassCheckoutInner({
                     </div>
                   ))}
                 </div>
-                {(dayArray.length > 0 || scheduleTime) && (
+                <div className="ck-sched-wrap">
+                  <div className="ck-sched-head">
+                    <span>Class schedule</span>
+                    {scheduleHref && <Link className="ck-sched-edit" href={scheduleHref}>Edit</Link>}
+                  </div>
                   <dl className="ck-sched">
-                    {dayArray.length > 0 && (
-                      <div><dt>Days</dt><dd>{dayArray.map((d) => DAY_NAMES[d]).join(', ')}</dd></div>
+                    {frequency && (
+                      <div><dt>Frequency</dt><dd style={{ textTransform: 'capitalize' }}>{frequency}</dd></div>
                     )}
-                    {scheduleTime && (
-                      <div><dt>Time</dt><dd>{fmtClock(scheduleTime)}</dd></div>
-                    )}
-                    {startSchedule && (
-                      <div><dt>Starts</dt><dd>{startSchedule}</dd></div>
-                    )}
+                    <div><dt>Days</dt><dd>{dayArray.length ? dayArray.map((d) => DAY_NAMES[d]).join(', ') : '—'}</dd></div>
+                    <div>
+                      <dt>Time</dt>
+                      <dd>
+                        {scheduleTime
+                          ? fmtClock(scheduleTime)
+                          : scheduleHref
+                            ? <Link className="ck-sched-edit" href={scheduleHref}>Pick a time</Link>
+                            : 'Not selected'}
+                      </dd>
+                    </div>
+                    {startSchedule && <div><dt>Starts</dt><dd>{startSchedule}</dd></div>}
                     <div>
                       <dt>Ends</dt>
                       <dd>
@@ -530,8 +554,11 @@ function ClassCheckoutInner({
                           : `After ${recurringOccurrences || recurringBill?.occurrences || '—'} sessions`}
                       </dd>
                     </div>
+                    {(recurringBill?.occurrences ?? recurringOccurrences) && (
+                      <div><dt>Sessions</dt><dd>{recurringBill?.occurrences ?? recurringOccurrences}</dd></div>
+                    )}
                   </dl>
-                )}
+                </div>
                 <BillLines
                   bill={recurringBill ? {
                     currency,
@@ -607,10 +634,18 @@ const css = `
 .ck-online-copy{ margin:6px 0 0; color:var(--brand-ink-soft); font-size:.88rem; line-height:1.5; }
 
 .ck-summary .ck-card-h{ font-size:15.5px; }
-.ck-sched{
-  margin:12px 0; padding:12px 0; display:grid; gap:9px;
-  border-bottom:1px solid var(--line, var(--brand-line));
+.ck-sched-wrap{ margin:12px 0; padding:12px 0; border-top:1px solid var(--line, var(--brand-line)); border-bottom:1px solid var(--line, var(--brand-line)); }
+.ck-sched-head{
+  display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px;
+  font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--muted, var(--brand-ink-soft));
 }
+.ck-sched-edit{
+  font-size:11px; font-weight:700; letter-spacing:.02em; text-transform:none;
+  color:var(--brand, var(--brand-accent)); text-decoration:underline; text-underline-offset:2px;
+}
+.ck-sched-edit:hover{ filter:brightness(1.1); }
+.ck-sched{ display:grid; gap:9px; margin:0; }
 .ck-sched > div{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
 .ck-sched dt{
   font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
