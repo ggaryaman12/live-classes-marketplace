@@ -83,6 +83,14 @@ const YELO_TENANT = {
   language: 'en',
 };
 const RECURRING_PAYMENT_METHODS = [PAYMENT.CASH, PAYMENT.WALLET, PAYMENT.PAYLATER];
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function fmtClock(hhmm) {
+  if (!hhmm || !hhmm.includes(':')) return hhmm || '—';
+  const [h, m] = hhmm.split(':').map(Number);
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
 
 const post = (url, body) =>
   fetch(apiPath(url), {
@@ -503,6 +511,27 @@ function ClassCheckoutInner({
                     </div>
                   ))}
                 </div>
+                {(dayArray.length > 0 || scheduleTime) && (
+                  <dl className="ck-sched">
+                    {dayArray.length > 0 && (
+                      <div><dt>Days</dt><dd>{dayArray.map((d) => DAY_NAMES[d]).join(', ')}</dd></div>
+                    )}
+                    {scheduleTime && (
+                      <div><dt>Time</dt><dd>{fmtClock(scheduleTime)}</dd></div>
+                    )}
+                    {startSchedule && (
+                      <div><dt>Starts</dt><dd>{startSchedule}</dd></div>
+                    )}
+                    <div>
+                      <dt>Ends</dt>
+                      <dd>
+                        {recurringEndMode === 'date'
+                          ? (recurringEndDate || '—')
+                          : `After ${recurringOccurrences || recurringBill?.occurrences || '—'} sessions`}
+                      </dd>
+                    </div>
+                  </dl>
+                )}
                 <BillLines
                   bill={recurringBill ? {
                     currency,
@@ -563,6 +592,29 @@ function ClassCheckoutInner({
 }
 
 const css = `
-.ck-online-note{ background:var(--brand-accent-soft); }
+/* This checkout now stands on its own — the page around it dropped the big
+   banner and the duplicate bill section — so give it a little more room and a
+   cleaner rhythm than the shared defaults. */
+.ck{ max-width:1080px; }
+.ck-title{ margin-bottom:24px; }
+.ck-grid{ gap:24px; }
+@media (min-width:881px){ .ck-grid{ grid-template-columns:1fr 380px; } }
+.ck-left{ gap:14px; }
+.ck-card{ padding:20px; }
+.ck-card-h{ margin-bottom:14px; }
+
+.ck-online-note{ background:var(--brand-accent-soft); border-color:color-mix(in srgb, var(--brand-accent) 24%, var(--brand-line)); }
 .ck-online-copy{ margin:6px 0 0; color:var(--brand-ink-soft); font-size:.88rem; line-height:1.5; }
+
+.ck-summary .ck-card-h{ font-size:15.5px; }
+.ck-sched{
+  margin:12px 0; padding:12px 0; display:grid; gap:9px;
+  border-bottom:1px solid var(--line, var(--brand-line));
+}
+.ck-sched > div{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.ck-sched dt{
+  font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+  color:var(--muted, var(--brand-ink-soft));
+}
+.ck-sched dd{ margin:0; font-size:13px; font-weight:600; text-align:right; }
 `;
