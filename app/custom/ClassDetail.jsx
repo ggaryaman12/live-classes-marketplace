@@ -479,10 +479,11 @@ function ClassDetailInner({
               )}
               {cls.productId ? (
                 <Link className="cd-side-primary" href={`/checkout?product=${cls.productId}`}>
-                  Set up a subscription
+                  Enroll now
                 </Link>
-              ) : null}
-              <a className="cd-side-cta" href="#available-times">See all available times</a>
+              ) : (
+                <a className="cd-side-cta" href="#available-times">See all available times</a>
+              )}
             </div>
           </aside>
         </div>
@@ -493,7 +494,7 @@ function ClassDetailInner({
           <b>₹{cls.price.toLocaleString()}</b> <span>/ session</span>
         </div>
         {cls.productId ? (
-          <Link href={`/checkout?product=${cls.productId}`}>Set up a subscription</Link>
+          <Link href={`/checkout?product=${cls.productId}`}>Enroll now</Link>
         ) : (
           <a href="#available-times">See times</a>
         )}
