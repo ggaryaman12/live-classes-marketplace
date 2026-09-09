@@ -347,7 +347,14 @@ function ClassCheckoutInner({
         start_schedule: startSchedule,
         occurrence_count: recurringOccurrences,
         ...(cycleType ? { cycle_type: cycleType } : {}),
-        request_body: JSON.stringify(requestBody),
+        // google_meet: 1 requested specifically for the recurring create call —
+        // added only inside request_body (an opaque JSON blob the validator
+        // doesn't inspect), not as a top-level field, and not on the one-time
+        // order path (buildOrderBody is shared with create_task_via_vendor_v2).
+        // Nothing found in the real backend or webapp source currently reads
+        // this key, so until the platform team wires it up this rides along
+        // inert rather than doing anything visible.
+        request_body: JSON.stringify({ ...requestBody, google_meet: 1 }),
       });
       setPlacing(false);
 
