@@ -155,22 +155,22 @@ function ClassCheckoutInner({
   const dayArray = (params.get('days') || '').split(',').filter(Boolean).map(Number);
   const scheduleTime = params.get('time') || '';
   const startSchedule = params.get('start') || '';
-  const recurringEndMode = params.get('endMode');
-  const recurringEndDate = params.get('endDate') || '';
   const recurringOccurrences = params.get('occurrences') || '';
   const usesRecurringApi = isSubscription && RECURRING_PAYMENT_METHODS.includes(pay);
 
-  // Back to the class-page scheduler with every choice preserved, so "Edit"
-  // on the schedule recap round-trips instead of resetting the form.
-  const productParam = params.get('product') || params.get('id');
+  // Stage 2 of this page. "Edit" jumps back to the scheduler (stage 1) at the
+  // top, keeping every choice so nothing is re-picked.
+  const stepSchedule = params.get('step') === 'schedule';
+  const scheduled = isSubscription && !!scheduleTime && !stepSchedule;
   let scheduleHref = null;
-  if (productParam) {
-    const sp = new URLSearchParams({ id: productParam });
-    for (const k of ['frequency', 'days', 'start', 'time', 'endMode', 'endDate', 'occurrences']) {
+  {
+    const sp = new URLSearchParams();
+    for (const k of ['product', 'id', 'session', 'frequency', 'days', 'start', 'time', 'occurrences']) {
       const v = params.get(k);
       if (v) sp.set(k, v);
     }
-    scheduleHref = `/p/class?${sp.toString()}`;
+    sp.set('step', 'schedule');
+    scheduleHref = `/checkout?${sp.toString()}`;
   }
 
   useEffect(() => {
@@ -235,7 +235,7 @@ function ClassCheckoutInner({
       schedule_time: scheduleTime,
       is_recurring_enabled: true,
       ...(cycleType ? { cycle_type: cycleType } : {}),
-      ...(recurringEndMode === 'date' ? { end_schedule: recurringEndDate } : { occurrence_count: recurringOccurrences }),
+      occurrence_count: recurringOccurrences,
     }).then((json) => {
       if (cancelled) return;
       if (json?.status === 200 && json?.data) {
@@ -252,7 +252,7 @@ function ClassCheckoutInner({
       }
     });
     return () => { cancelled = true; };
-  }, [isSubscription, cart.items, cart.storeId, dayArrayKey, startSchedule, scheduleTime, cycleType, recurringEndMode, recurringEndDate, recurringOccurrences, session]);
+  }, [isSubscription, cart.items, cart.storeId, dayArrayKey, startSchedule, scheduleTime, cycleType, recurringOccurrences, session]);
 
   // deliveryType 2 = self-pickup on the shared bill/order contract, which is
   // what zeroes the delivery charge — the closest real fit for "nothing is
@@ -345,9 +345,7 @@ function ClassCheckoutInner({
         day_array: dayArray,
         schedule_time: scheduleTime,
         start_schedule: startSchedule,
-        ...(recurringEndMode === 'date'
-          ? { end_schedule: recurringEndDate }
-          : { occurrence_count: recurringOccurrences }),
+        occurrence_count: recurringOccurrences,
         ...(cycleType ? { cycle_type: cycleType } : {}),
         request_body: JSON.stringify(requestBody),
       });
@@ -441,6 +439,10 @@ function ClassCheckoutInner({
       </div>
     );
   }
+
+  // Stage 1 (the scheduler) is still active — payment renders only once a
+  // schedule with a real time exists. The scheduler sits above this on the page.
+  if (!scheduled) return null;
 
   if (cart.ready && cart.count === 0) {
     return (
@@ -548,11 +550,7 @@ function ClassCheckoutInner({
                     {startSchedule && <div><dt>Starts</dt><dd>{startSchedule}</dd></div>}
                     <div>
                       <dt>Ends</dt>
-                      <dd>
-                        {recurringEndMode === 'date'
-                          ? (recurringEndDate || '—')
-                          : `After ${recurringOccurrences || recurringBill?.occurrences || '—'} sessions`}
-                      </dd>
+                      <dd>After {recurringOccurrences || recurringBill?.occurrences || '—'} sessions</dd>
                     </div>
                     {(recurringBill?.occurrences ?? recurringOccurrences) && (
                       <div><dt>Sessions</dt><dd>{recurringBill?.occurrences ?? recurringOccurrences}</dd></div>
