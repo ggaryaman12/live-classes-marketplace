@@ -48,12 +48,16 @@ function EnrollHeaderInner({ eyebrow = "Confirm your subscription" }) {
   const done = ["order", "order_id", "job_id", "rule_id", "enrolled"].some((k) => params.get(k));
   const scheduled =
     params.get("recurring") === "1" && !!params.get("time") && params.get("step") !== "schedule";
-  const current = done ? 2 : scheduled ? 1 : 0;
+  // Set by the scheduler once it knows whether this exact class has a
+  // schedule at all ('0' = one-time — no such step, so never sit on it).
+  const hasSchedule = params.get("hasSchedule");
+  const current = done ? 2 : scheduled || hasSchedule === "0" ? 1 : 0;
 
   // "Schedule" (step 1) steps back to the scheduler at the top of this same
-  // page, carrying every choice already made so nothing is re-picked.
+  // page, carrying every choice already made so nothing is re-picked. A
+  // one-time class never had a schedule, so there's nothing to step back to.
   let scheduleHref = null;
-  if (!done) {
+  if (!done && hasSchedule !== "0") {
     const sp = new URLSearchParams();
     for (const k of ["product", "id", "session", "frequency", "days", "start", "time", "occurrences"]) {
       const v = params.get(k);
