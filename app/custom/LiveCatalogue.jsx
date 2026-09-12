@@ -5,13 +5,35 @@ import Link from "next/link";
 
 /**
  * LiveCatalogue — this teacher's real classes, fetched straight from the
- * backend (`get_products_for_category`) instead of the registered Catalogue
- * node, whose data-binding was verified NOT to be surfacing real stock for
- * at least one merchant (user_id 510012595 — confirmed via direct API call:
- * status 200, 4 enabled products) even though the product is genuinely
- * there. This component calls the same real endpoint directly and renders
- * whatever comes back — real classes if there are any, an honest empty
- * state if there truly are none, never a fabricated placeholder.
+ * backend instead of the registered Catalogue node, whose data-binding was
+ * verified NOT to be surfacing real stock for at least one merchant (user_id
+ * 510012595) even though the product is genuinely there.
+ *
+ * THE BUG THIS FIXES: `get_products_for_category` takes a `parent_category_id`
+ * (from `catalogue/get`) and the controller DEFAULTS IT TO 0 when omitted —
+ * that is "root only", not "everything". Calling it with just `user_id` (what
+ * this component used to do) verified live as a real, confirmed-empty result
+ * for every merchant here whose catalogue actually uses categories (Nancy,
+ * Daisy test, XCEL, Menu-Test, merch manav, kjhdsiyghfn — all 0 products via
+ * that call), while it happens to work for the couple of merchants with no
+ * categories at all, whose products sit at the literal root. So "merchant has
+ * a category and products, storefront shows none" is exactly this: the
+ * category id was never being sent. Real two-step fix, per the platform's own
+ * catalogue flow (`catalogue/get` then `get_products_for_category`):
+ *   1. `catalogue/get` (`show_all_sub_categories: 1`) for the real n-level
+ *      category tree — walked recursively (verified real nesting exists,
+ *      e.g. XCEL's "cat2" → "S1"/"S2" → deeper still).
+ *   2. Every node with `has_products: 1` gets its own
+ *      `get_products_for_category` call with that category's `catalogue_id`
+ *      as `parent_category_id` — confirmed live: Nancy's "Maths" category
+ *      (catalogue_id 4179460) returns 1 real product this way, versus 0 with
+ *      no category at all.
+ *   3. Products render grouped under their real category name, not one flat
+ *      undifferentiated grid — "show the category with respect to their
+ *      products".
+ * A merchant with no categories at all falls back to the original single,
+ * un-grouped root call (parent_category_id omitted), which is what already
+ * worked for them.
  *
  * The store id is read from the URL (`/store/<id>`), matching how this page
  * is routed elsewhere in the tree.
@@ -31,7 +53,7 @@ const YELO_TENANT = {
   language: "en",
 };
 
-async function getProductsForCategory({ userId, page = 1, offset = 0, limit = 25 }) {
+async function getProductsForCategory({ userId, parentCategoryId, page = 1, offset = 0, limit = 25 }) {
   try {
     const res = await fetch(`${YELO_BASE}/get_products_for_category`, {
       method: "POST",
@@ -43,6 +65,7 @@ async function getProductsForCategory({ userId, page = 1, offset = 0, limit = 25
       body: JSON.stringify({
         ...YELO_TENANT,
         user_id: userId,
+        ...(parentCategoryId ? { parent_category_id: parentCategoryId } : {}),
         page_no: page,
         offset,
         limit,
@@ -54,6 +77,37 @@ async function getProductsForCategory({ userId, page = 1, offset = 0, limit = 25
     return { ok: false, data: null };
   }
 }
+
+async function getCatalogueTree(userId) {
+  try {
+    const res = await fetch(`${YELO_BASE}/catalogue/get`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", base_version: "1.0.0", device_type: "WEB" },
+      body: JSON.stringify({ ...YELO_TENANT, user_id: userId, show_all_sub_categories: 1 }),
+    });
+    const json = await res.json();
+    return { ok: json?.status === 200, categories: Array.isArray(json?.data?.result) ? json.data.result : [] };
+  } catch {
+    return { ok: false, categories: [] };
+  }
+}
+
+// The tree can nest several levels deep (verified real: a category with no
+// products of its own but sub-categories that do). Collect every node that
+// actually carries products, at any depth.
+function categoriesWithProducts(categories) {
+  const out = [];
+  const walk = (list) => {
+    for (const c of list || []) {
+      if (c.has_products === 1) out.push({ id: c.catalogue_id, name: c.name });
+      if (Array.isArray(c.sub_categories) && c.sub_categories.length) walk(c.sub_categories);
+    }
+  };
+  walk(categories);
+  return out;
+}
+
+const isLive = (p) => p.is_enabled === 1 && p.is_deleted !== 1;
 
 function currentStoreId() {
   if (typeof window === "undefined") return null;
@@ -73,7 +127,9 @@ export default function LiveCatalogue({
   userId = null,
 }) {
   const [state, setState] = useState("loading"); // loading | ok | empty | error
-  const [products, setProducts] = useState([]);
+  // Each group is { category: {id,name} | null, products: [...] }. `category`
+  // is null only for a merchant with no categories at all (root products).
+  const [groups, setGroups] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,17 +141,45 @@ export default function LiveCatalogue({
         return;
       }
       setState("loading");
-      const res = await getProductsForCategory({ userId: storeId });
+
+      const tree = await getCatalogueTree(storeId);
       if (cancelled) return;
-      if (!res.ok) {
+      if (!tree.ok) {
         setState("error");
         return;
       }
-      const live = (Array.isArray(res.data) ? res.data : []).filter(
-        (p) => p.is_enabled === 1 && p.is_deleted !== 1
-      );
-      setProducts(live);
-      setState(live.length ? "ok" : "empty");
+      const cats = categoriesWithProducts(tree.categories);
+
+      let nextGroups = [];
+      if (cats.length) {
+        const results = await Promise.all(
+          cats.map((c) => getProductsForCategory({ userId: storeId, parentCategoryId: c.id }))
+        );
+        if (cancelled) return;
+        if (results.some((r) => !r.ok)) {
+          setState("error");
+          return;
+        }
+        nextGroups = cats
+          .map((category, i) => ({
+            category,
+            products: (Array.isArray(results[i].data) ? results[i].data : []).filter(isLive),
+          }))
+          .filter((g) => g.products.length);
+      } else {
+        // No categories at all — this merchant's products sit at the root.
+        const res = await getProductsForCategory({ userId: storeId });
+        if (cancelled) return;
+        if (!res.ok) {
+          setState("error");
+          return;
+        }
+        const live = (Array.isArray(res.data) ? res.data : []).filter(isLive);
+        if (live.length) nextGroups = [{ category: null, products: live }];
+      }
+
+      setGroups(nextGroups);
+      setState(nextGroups.length ? "ok" : "empty");
     }
 
     load();
@@ -137,49 +221,65 @@ export default function LiveCatalogue({
         )}
 
         {state === "ok" && (
-          <ul className="lc-grid">
-            {products.map((p) => {
-              const term = encodeURIComponent(`${p.name}, kids class`);
-              const src = p.image_url || `https://source.unsplash.com/480x360/?${term}`;
-              const fallback = `https://picsum.photos/seed/product-${p.product_id}/480/360`;
-              const detailHref = `/p/class?id=${p.product_id}`;
-              return (
-                <li key={p.product_id} className="lc-card">
-                  <Link href={detailHref} className="lc-media">
-                    <img
-                      src={src}
-                      alt={p.name}
-                      width="480"
-                      height="360"
-                      loading="lazy"
-                      onError={(e) => {
-                        if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
-                      }}
-                    />
-                  </Link>
-                  <div className="lc-body">
-                    <Link href={detailHref} className="lc-title-link">
-                      <h3 className="lc-title">{p.name}</h3>
-                    </Link>
-                    {p.is_recurring_enabled === 1 && (
-                      <span className="lc-sub-badge">↻ Subscription available</span>
-                    )}
-                    {p.description && <p className="lc-desc">{p.description}</p>}
-                    <div className="lc-foot">
-                      <span className="lc-price">{formatPrice(p)}</span>
-                      <Link href={detailHref} className="lc-cta">
-                        View class
-                      </Link>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="lc-groups">
+            {groups.map((g) => (
+              <div key={g.category?.id ?? "root"} className="lc-group">
+                {g.category && (
+                  <h3 className="lc-cat-heading">
+                    {g.category.name}
+                    <span className="lc-cat-count">{g.products.length}</span>
+                  </h3>
+                )}
+                <ul className="lc-grid">
+                  {g.products.map((p) => (
+                    <ProductCard key={p.product_id} p={p} />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         )}
       </div>
       <style>{css}</style>
     </section>
+  );
+}
+
+function ProductCard({ p }) {
+  const term = encodeURIComponent(`${p.name}, kids class`);
+  const src = p.image_url || `https://source.unsplash.com/480x360/?${term}`;
+  const fallback = `https://picsum.photos/seed/product-${p.product_id}/480/360`;
+  const detailHref = `/p/class?id=${p.product_id}`;
+  return (
+    <li className="lc-card">
+      <Link href={detailHref} className="lc-media">
+        <img
+          src={src}
+          alt={p.name}
+          width="480"
+          height="360"
+          loading="lazy"
+          onError={(e) => {
+            if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+          }}
+        />
+      </Link>
+      <div className="lc-body">
+        <Link href={detailHref} className="lc-title-link">
+          <h4 className="lc-title">{p.name}</h4>
+        </Link>
+        {p.is_recurring_enabled === 1 && (
+          <span className="lc-sub-badge">↻ Subscription available</span>
+        )}
+        {p.description && <p className="lc-desc">{p.description}</p>}
+        <div className="lc-foot">
+          <span className="lc-price">{formatPrice(p)}</span>
+          <Link href={detailHref} className="lc-cta">
+            View class
+          </Link>
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -188,6 +288,18 @@ const css = `
 @media (min-width:820px){ .bell-lc{ padding:80px 32px; } }
 .lc-frame{ max-width:1100px; margin-inline:auto; }
 .lc-frame > h2{ font-family:var(--brand-font-display); font-weight:600; letter-spacing:-.01em; font-size:clamp(1.4rem,3.4vw,1.9rem); margin:0 0 22px; }
+
+.lc-groups{ display:grid; gap:34px; }
+.lc-cat-heading{
+  display:flex; align-items:center; gap:10px; margin:0 0 14px;
+  font-family:var(--brand-font-display); font-weight:600; font-size:1.05rem;
+  padding-bottom:10px; border-bottom:1px solid var(--brand-line);
+}
+.lc-cat-count{
+  min-width:22px; height:22px; padding:0 6px; display:inline-grid; place-items:center;
+  border-radius:980px; font-size:.72rem; font-weight:700; font-family:var(--brand-font-body);
+  background:var(--brand-accent-soft); color:var(--brand-accent);
+}
 
 .lc-grid{ list-style:none; margin:0; padding:0; display:grid; gap:16px; grid-template-columns:1fr; }
 @media (min-width:560px){ .lc-grid{ grid-template-columns:repeat(2,1fr); } }
