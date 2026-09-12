@@ -162,6 +162,20 @@ function ClassCheckoutInner({
   // top, keeping every choice so nothing is re-picked.
   const stepSchedule = params.get('step') === 'schedule';
   const scheduled = isSubscription && !!scheduleTime && !stepSchedule;
+
+  // Set by the scheduler component the moment it knows whether THIS product
+  // actually has a schedule to pick — '1' recurring, '0' one-time. Needed
+  // because a bare `/checkout?product=X` looks identical whether or not a
+  // schedule is coming; without this, payment showed up while the parent was
+  // still on "Set up your subscription" for a recurring class.
+  const productParam = params.get('product') || params.get('id');
+  const hasSchedule = params.get('hasSchedule');
+  // `scheduled` already proves a schedule was really completed even on a URL
+  // that dropped the `hasSchedule` flag (e.g. right after "Proceed to pay"
+  // rewrites the query to the day/time params) — never re-hide in that case.
+  const waitingOnSchedule = !!productParam && hasSchedule === null && !scheduled;
+  const scheduleRequired = hasSchedule === '1';
+
   let scheduleHref = null;
   {
     const sp = new URLSearchParams();
@@ -447,13 +461,16 @@ function ClassCheckoutInner({
     );
   }
 
-  // Stage 1 (the scheduler) is still active for a SUBSCRIPTION — payment for
-  // that renders only once a schedule with a real time exists. A one-time
-  // (non-recurring) class has no schedule step at all, so it must never be
-  // caught by this gate — confirmed live as a real bug: merchant "QA X"'s
-  // non-recurring Maths products (is_recurring_enabled: 0) left checkout
-  // completely blank, because this used to gate on `scheduled` unconditionally.
-  if (isSubscription && !scheduled) return null;
+  // Still finding out whether this class needs a schedule at all — stay
+  // hidden rather than flash "Confirm & pay" before the scheduler above has
+  // had a chance to say so (a real bug: it used to show up immediately, on
+  // the "Set up your subscription" screen, for any recurring class).
+  if (waitingOnSchedule) return null;
+  // A class that does need one stays hidden until it's actually picked. A
+  // one-time class (hasSchedule === '0') never had this requirement, so it
+  // was never caught by this — and must not be, or checkout goes blank for
+  // it (confirmed live: merchant "QA X"'s non-recurring Maths products).
+  if (scheduleRequired && !scheduled) return null;
 
   if (cart.ready && cart.count === 0) {
     return (
