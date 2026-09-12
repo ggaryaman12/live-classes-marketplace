@@ -447,9 +447,13 @@ function ClassCheckoutInner({
     );
   }
 
-  // Stage 1 (the scheduler) is still active — payment renders only once a
-  // schedule with a real time exists. The scheduler sits above this on the page.
-  if (!scheduled) return null;
+  // Stage 1 (the scheduler) is still active for a SUBSCRIPTION — payment for
+  // that renders only once a schedule with a real time exists. A one-time
+  // (non-recurring) class has no schedule step at all, so it must never be
+  // caught by this gate — confirmed live as a real bug: merchant "QA X"'s
+  // non-recurring Maths products (is_recurring_enabled: 0) left checkout
+  // completely blank, because this used to gate on `scheduled` unconditionally.
+  if (isSubscription && !scheduled) return null;
 
   if (cart.ready && cart.count === 0) {
     return (
