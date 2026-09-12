@@ -128,6 +128,7 @@ export default function SubscribeScheduler() {
  */
 function SubscribeSchedulerInner() {
   const params = useSearchParams();
+  const router = useRouter();
   // This scheduler is stage 1 of the checkout page. The class id arrives as
   // `product` there (and as `id` when linked from anywhere else).
   const id = params.get("id") || params.get("product");
@@ -164,6 +165,23 @@ function SubscribeSchedulerInner() {
       cancelled = true;
     };
   }, [id]);
+
+  // ClassCheckout and EnrollHeader can't otherwise tell "recurring, schedule
+  // not chosen yet" apart from "one-time, nothing to schedule" — both start
+  // from the same bare `/checkout?product=X` URL. Without this, "Confirm &
+  // pay" was showing up while still on "Set up your subscription" for a
+  // recurring class, because the payment section had no way to know a
+  // schedule was still pending. Publish the real answer the moment this
+  // scheduler knows it, once, as a plain URL flag the rest of the page reads.
+  useEffect(() => {
+    if (!product) return;
+    const wantsSchedule = product.is_recurring_enabled === 1 ? "1" : "0";
+    if (params.get("hasSchedule") === wantsSchedule) return;
+    const sp = new URLSearchParams(params.toString());
+    sp.set("hasSchedule", wantsSchedule);
+    router.replace(`?${sp.toString()}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product]);
 
   if (!product || scheduled) return null;
 
