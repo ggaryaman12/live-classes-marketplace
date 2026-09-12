@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCart } from "../lib/cart";
@@ -47,6 +47,19 @@ import DatePicker from "./DatePicker";
  * to dodge CORS and keep the tenant envelope server-side) and adding one is
  * outside this workspace, so actually creating the recurring order isn't
  * wired from here yet — everything up to and including the real bill is.
+ *
+ * NOT EVERY REAL CLASS IS RECURRING-ENABLED — confirmed live: merchant "QA X"
+ * (user_id 510013303, the same store used above) also sells plain, one-time
+ * classes under its "Maths" category (e.g. product_id 11670768, "Maths (Age
+ * 5-10)", is_recurring_enabled: 0). This component is stage 1 of the checkout
+ * page; a non-recurring product has no schedule to pick, but it still needs
+ * to reach the cart somehow, or checkout shows nothing at all — no item, no
+ * schedule section, nothing to click (a real bug this fixes: enrolling in
+ * that exact product used to leave checkout completely blank). So a
+ * non-recurring product is added to the cart automatically and quietly here
+ * (`OneTimeAutoEnroll`, no picker UI — there is nothing to schedule), and
+ * ClassCheckout's own already-working one-time-order flow takes it from
+ * there. Recurring products still get the full picker below.
  */
 
 const YELO_BASE = "https://test-api-3025.jungleworks.com";
@@ -141,7 +154,7 @@ function SubscribeSchedulerInner() {
         const json = await res.json();
         if (cancelled) return;
         const p = json?.status === 200 ? (Array.isArray(json.data) ? json.data[0] : json.data) : null;
-        setProduct(p && p.is_recurring_enabled === 1 ? p : false);
+        setProduct(p || false);
       } catch {
         if (!cancelled) setProduct(false);
       }
@@ -153,16 +166,42 @@ function SubscribeSchedulerInner() {
   }, [id]);
 
   if (!product || scheduled) return null;
-  return (
-    <SubscribePicker
-      productId={product.product_id}
-      productName={product.name}
-      price={Number(product.price) || 0}
-      storeUserId={product.user_id}
-      storeName={product.store_name || "This teacher"}
-      productImage={product.image_url || ""}
-    />
-  );
+
+  const common = {
+    productId: product.product_id,
+    productName: product.name,
+    price: Number(product.price) || 0,
+    storeUserId: product.user_id,
+    storeName: product.store_name || "This teacher",
+    productImage: product.image_url || "",
+  };
+
+  if (product.is_recurring_enabled !== 1) {
+    return <OneTimeAutoEnroll {...common} />;
+  }
+  return <SubscribePicker {...common} />;
+}
+
+// A class that isn't recurring-enabled has no schedule to pick — it just
+// needs to land in the cart so the payment step below has something to show.
+// Adds itself once (a ref guard, since the product/session effects this sits
+// beside can re-render) and renders nothing.
+function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeName, productImage }) {
+  const { add, setQty } = useCart();
+  const added = useRef(false);
+
+  useEffect(() => {
+    if (added.current) return;
+    added.current = true;
+    add(
+      { id: storeUserId, name: storeName },
+      { id: productId, name: productName, price, image: productImage }
+    );
+    setQty(productId, 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId, storeUserId]);
+
+  return null;
 }
 
 function SubscribePicker({ productId, productName, price, storeUserId, storeName, productImage }) {
