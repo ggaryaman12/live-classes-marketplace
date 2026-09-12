@@ -9,6 +9,7 @@
       "props": {},
       "children": [
         "enroll",
+        "schedule",
         "recurringSummary",
         "checkout1"
       ]
@@ -19,6 +20,13 @@
       "props": {
         "component": "EnrollHeader",
         "eyebrow": "Confirm your subscription"
+      }
+    },
+    "schedule": {
+      "id": "schedule",
+      "type": "Custom",
+      "props": {
+        "component": "SubscribeScheduler"
       }
     },
     "recurringSummary": {
