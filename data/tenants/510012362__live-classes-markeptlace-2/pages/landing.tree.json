@@ -10,7 +10,6 @@
       "children": [
         "hero",
         "subjects",
-        "week",
         "how",
         "teachersLede",
         "grid",
@@ -35,15 +34,6 @@
         "component": "SubjectTiles",
         "heading": "Browse by category",
         "subhead": "What this teacher network actually offers right now, pulled live from the marketplace.",
-        "browseHref": "/stores"
-      }
-    },
-    "week": {
-      "id": "week",
-      "type": "Custom",
-      "props": {
-        "component": "StartingThisWeek",
-        "heading": "Starting this week",
         "browseHref": "/stores"
       }
     },

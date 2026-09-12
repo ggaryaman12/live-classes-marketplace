@@ -7,7 +7,7 @@
       "id": "p1",
       "type": "Page",
       "props": {},
-      "children": ["detail", "subscribe", "myCourses"]
+      "children": ["detail", "myCourses"]
     },
     "detail": {
       "id": "detail",
@@ -16,13 +16,6 @@
         "component": "ClassDetail",
         "backLabel": "← All classes",
         "browseHref": "/stores"
-      }
-    },
-    "subscribe": {
-      "id": "subscribe",
-      "type": "Custom",
-      "props": {
-        "component": "SubscribeScheduler"
       }
     },
     "myCourses": {
