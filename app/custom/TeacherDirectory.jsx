@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 
 /**
  * TeacherDirectory — the "teachers with classes open now" listing, replacing
@@ -65,12 +66,19 @@ function initials(name) {
     .toUpperCase();
 }
 
-async function fetchBrowsePage(skip) {
+async function fetchBrowsePage(skip, categoryId) {
   try {
     const res = await fetch(`${YELO_BASE}/marketplace/marketplace_get_city_storefronts_v3`, {
       method: "POST",
       headers: { "Content-Type": "application/json", base_version: "1.0.0", device_type: "WEB" },
-      body: JSON.stringify({ ...YELO_TENANT, ...COORDS, vendor_id: 0, skip, limit: PAGE_SIZE }),
+      body: JSON.stringify({
+        ...YELO_TENANT,
+        ...COORDS,
+        vendor_id: 0,
+        skip,
+        limit: PAGE_SIZE,
+        ...(categoryId ? { business_category_id: categoryId } : {}),
+      }),
     });
     const json = await res.json();
     return { ok: json?.status === 200, data: Array.isArray(json?.data) ? json.data : [] };
@@ -101,10 +109,25 @@ async function fetchSearch(searchText) {
   }
 }
 
-export default function TeacherDirectory({
+export default function TeacherDirectory(props) {
+  return (
+    <Suspense fallback={null}>
+      <TeacherDirectoryInner {...props} />
+    </Suspense>
+  );
+}
+
+function TeacherDirectoryInner({
   heading = "Teachers with classes open now",
   columns = 3,
 }) {
+  const params = useSearchParams();
+  const router = useRouter();
+  // Set by SubjectTiles when a category tile is clicked (?category=<id>,
+  // ?categoryName=<label> — this same section, no navigation away).
+  const categoryId = params.get("category");
+  const categoryName = params.get("categoryName");
+
   const [state, setState] = useState("loading"); // loading | ok | error
   const [teachers, setTeachers] = useState([]);
   const [skip, setSkip] = useState(0);
@@ -117,12 +140,12 @@ export default function TeacherDirectory({
 
   const loadBrowse = useCallback(async () => {
     setState("loading");
-    const res = await fetchBrowsePage(0);
+    const res = await fetchBrowsePage(0, categoryId);
     setTeachers(res.data);
     setSkip(res.data.length);
     setHasMore(res.data.length >= PAGE_SIZE);
     setState(res.ok ? "ok" : "error");
-  }, []);
+  }, [categoryId]);
 
   useEffect(() => {
     loadBrowse();
@@ -138,7 +161,10 @@ export default function TeacherDirectory({
     setState(res.ok ? "ok" : "error");
   }, []);
 
-  // debounced live search against the real endpoint
+  // debounced live search against the real endpoint — a typed search runs
+  // across every teacher, same as before; it takes over from the category
+  // filter rather than combining with it (the search endpoint has no
+  // category param), so the filter chip below is hidden while searching.
   useEffect(() => {
     const q = query.trim();
     clearTimeout(debounceRef.current);
@@ -156,7 +182,7 @@ export default function TeacherDirectory({
 
   const loadMore = useCallback(async () => {
     setLoadingMore(true);
-    const res = await fetchBrowsePage(skip);
+    const res = await fetchBrowsePage(skip, categoryId);
     if (res.ok) {
       setTeachers((t) => [...t, ...res.data]);
       setSkip((s) => s + res.data.length);
@@ -165,17 +191,31 @@ export default function TeacherDirectory({
       setHasMore(false);
     }
     setLoadingMore(false);
-  }, [skip]);
+  }, [skip, categoryId]);
+
+  const clearCategory = () => {
+    const sp = new URLSearchParams(params.toString());
+    sp.delete("category");
+    sp.delete("categoryName");
+    const qs = sp.toString();
+    router.replace(qs ? `?${qs}#teachers-open-now` : "#teachers-open-now", { scroll: false });
+  };
 
   const openCount = teachers.filter((t) => t.is_closed !== 1).length;
 
   return (
-    <section className="bell-td" aria-labelledby="bell-td-h">
+    <section className="bell-td" id="teachers-open-now" aria-labelledby="bell-td-h">
       <div className="td-frame">
         <div className="td-head">
           <div className="td-head-text">
             <p className="td-kicker">Teacher directory</p>
             <h2 id="bell-td-h">{heading}</h2>
+            {!searching && categoryId && categoryName && (
+              <p className="td-filter-chip">
+                Showing: <b>{categoryName}</b>
+                <button type="button" onClick={clearCategory} aria-label={`Clear ${categoryName} filter`}>✕</button>
+              </p>
+            )}
             {state === "ok" && teachers.length > 0 && !searching && (
               <p className="td-count">
                 {openCount} of {teachers.length} teachers taking students now
@@ -232,7 +272,16 @@ export default function TeacherDirectory({
 
         {state === "ok" && teachers.length === 0 && (
           <div className="td-empty">
-            <p>{searching ? `No teachers match “${query.trim()}”.` : "No teachers to show right now."}</p>
+            <p>
+              {searching
+                ? `No teachers match “${query.trim()}”.`
+                : categoryId
+                  ? `No teachers under ${categoryName || "this category"} right now.`
+                  : "No teachers to show right now."}
+            </p>
+            {!searching && categoryId && (
+              <button type="button" onClick={clearCategory}>Show every teacher</button>
+            )}
           </div>
         )}
 
@@ -349,6 +398,17 @@ const css = `
 .td-kicker{ margin:0; font-size:.74rem; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--brand-accent); }
 .td-head h2{ font-family:var(--brand-font-display); font-weight:600; letter-spacing:-.01em; font-size:clamp(1.6rem,4vw,2.1rem); margin:0; line-height:1.15; }
 .td-count{ margin:2px 0 0; font-size:.86rem; color:var(--brand-ink-soft); }
+.td-filter-chip{
+  margin:2px 0 0; display:inline-flex; align-items:center; gap:8px;
+  font-size:.82rem; color:var(--brand-ink-soft);
+}
+.td-filter-chip b{ color:var(--brand-ink); font-weight:650; }
+.td-filter-chip button{
+  border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink-soft);
+  width:20px; height:20px; border-radius:50%; font-size:.7rem; line-height:1; cursor:pointer;
+  display:inline-grid; place-items:center; transition:border-color var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease);
+}
+.td-filter-chip button:hover{ border-color:var(--brand-accent); color:var(--brand-accent); }
 
 .td-search{ position:relative; display:flex; align-items:center; }
 .td-search-icon{ position:absolute; left:13px; width:16px; height:16px; color:var(--brand-ink-soft); pointer-events:none; }
