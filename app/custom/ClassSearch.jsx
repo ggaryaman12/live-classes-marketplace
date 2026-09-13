@@ -161,17 +161,6 @@ function ClassSearchInner({
     return list;
   }, [rows, q, pmax, availableOnly, sort]);
 
-  const [copied, setCopied] = useState(false);
-  const share = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setCopied(false);
-    }
-  }, []);
-
   return (
     <section className="bell-cs" aria-labelledby="bell-cs-h">
       <div className="cs-frame">
@@ -238,16 +227,6 @@ function ClassSearchInner({
 
           <div className="cs-results">
             <div className="cs-results-bar">
-              <p aria-live="polite">
-                {state === "loading" && rows.length === 0 ? (
-                  "Loading…"
-                ) : (
-                  <>
-                    <b>{results.length}</b> of {rows.length} loaded
-                    {activeCount ? " match your filters" : ""}
-                  </>
-                )}
-              </p>
               <div className="cs-results-actions">
                 <label className="cs-sort">
                   <span>Sort</span>
@@ -257,9 +236,6 @@ function ClassSearchInner({
                     ))}
                   </select>
                 </label>
-                <button type="button" className="cs-share" onClick={share}>
-                  {copied ? "Link copied" : "Copy this search"}
-                </button>
               </div>
             </div>
 
@@ -401,17 +377,10 @@ const styles = `
 .cs-range-ends{ display:flex; justify-content:space-between; font-size:.72rem; color:var(--brand-ink-soft); margin-top:2px; }
 .cs-empty button{ margin-top:8px; border:1px solid var(--brand-line); background:var(--brand-paper); border-radius:980px; padding:5px 12px; font:inherit; font-size:.76rem; cursor:pointer; color:var(--brand-ink); }
 
-.cs-results-bar{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:18px; }
-.cs-results-bar p{ margin:0; font-size:.92rem; }
-.cs-results-bar p b{ font-family:var(--brand-font-display); }
+.cs-results-bar{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:flex-end; margin-bottom:18px; }
 .cs-results-actions{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .cs-sort{ display:flex; align-items:center; gap:7px; font-size:.82rem; color:var(--brand-ink-soft); }
 .cs-sort select{ font:inherit; font-size:.82rem; padding:7px 9px; border:1px solid var(--brand-line); border-radius:var(--radius); background:var(--brand-surface); color:var(--brand-ink); }
-.cs-share{
-  border:1px solid var(--brand-accent); background:var(--brand-accent-soft); color:var(--brand-accent);
-  font:inherit; font-size:.82rem; font-weight:600; padding:8px 14px; border-radius:var(--radius); cursor:pointer;
-}
-[data-theme="dark"] .cs-share{ color:var(--brand-ink); }
 
 .cs-grid{ list-style:none; margin:0; padding:0; display:grid; gap:16px; grid-template-columns:1fr; }
 @media (min-width:560px){ .cs-grid{ grid-template-columns:repeat(2,1fr); } }
