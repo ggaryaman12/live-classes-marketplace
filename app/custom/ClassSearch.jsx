@@ -373,8 +373,14 @@ const styles = `
   border:1px solid var(--brand-line); border-radius:var(--radius-lg);
   background:var(--brand-surface); padding:6px 16px 16px;
 }
-@media (min-width:940px){ .cs-rail{ position:sticky; top:16px; } }
-.cs-rail-head{ display:flex; justify-content:space-between; align-items:center; padding:12px 0 10px; font-family:var(--brand-font-display); font-weight:600; font-size:.9rem; border-bottom:1px solid var(--brand-line); }
+/* Fixed in place while the results scroll past it — and if the rail's own
+   content ever runs taller than the viewport (a bigger filter set, a small
+   screen with the browser UI eating space, browser zoom), it gets its own
+   internal scrollbar instead of spilling under the footer or getting cut off. */
+@media (min-width:940px){
+  .cs-rail{ position:sticky; top:16px; max-height:calc(100vh - 32px); overflow-y:auto; }
+}
+.cs-rail-head{ display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; background:var(--brand-surface); padding:12px 0 10px; font-family:var(--brand-font-display); font-weight:600; font-size:.9rem; border-bottom:1px solid var(--brand-line); z-index:1; }
 .cs-clear{ border:0; background:transparent; color:var(--brand-accent); font-weight:600; font-size:.8rem; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
 
 .cs-rail fieldset{ border:0; border-bottom:1px solid var(--brand-line); margin:0; padding:14px 0; }
