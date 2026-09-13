@@ -226,8 +226,10 @@ export default function LiveCatalogue({
               <div key={g.category?.id ?? "root"} className="lc-group">
                 {g.category && (
                   <h3 className="lc-cat-heading">
-                    {g.category.name}
-                    <span className="lc-cat-count">{g.products.length}</span>
+                    <span className="lc-cat-pill">
+                      {g.category.name}
+                      <b className="lc-cat-count">{g.products.length}</b>
+                    </span>
                   </h3>
                 )}
                 <ul className="lc-grid">
@@ -290,15 +292,17 @@ const css = `
 .lc-frame > h2{ font-family:var(--brand-font-display); font-weight:600; letter-spacing:-.01em; font-size:clamp(1.4rem,3.4vw,1.9rem); margin:0 0 22px; }
 
 .lc-groups{ display:grid; gap:34px; }
-.lc-cat-heading{
-  display:flex; align-items:center; gap:10px; margin:0 0 14px;
-  font-family:var(--brand-font-display); font-weight:600; font-size:1.05rem;
-  padding-bottom:10px; border-bottom:1px solid var(--brand-line);
+.lc-cat-heading{ margin:0 0 16px; }
+.lc-cat-pill{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:9px 16px; border-radius:980px;
+  background:var(--brand-accent); color:var(--brand-accent-ink);
+  font-family:var(--brand-font-display); font-weight:650; font-size:.92rem; line-height:1;
 }
 .lc-cat-count{
-  min-width:22px; height:22px; padding:0 6px; display:inline-grid; place-items:center;
+  min-width:20px; height:20px; padding:0 6px; display:inline-grid; place-items:center;
   border-radius:980px; font-size:.72rem; font-weight:700; font-family:var(--brand-font-body);
-  background:var(--brand-accent-soft); color:var(--brand-accent);
+  background:color-mix(in srgb, var(--brand-accent-ink) 22%, transparent); color:inherit;
 }
 
 .lc-grid{ list-style:none; margin:0; padding:0; display:grid; gap:16px; grid-template-columns:1fr; }
