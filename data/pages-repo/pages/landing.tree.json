@@ -10,7 +10,6 @@
       "children": [
         "hero",
         "subjects",
-        "liveClasses",
         "how",
         "teachersLede",
         "grid",
@@ -36,15 +35,6 @@
         "heading": "Browse by category",
         "subhead": "What this teacher network actually offers right now, pulled live from the marketplace.",
         "browseHref": "/stores"
-      }
-    },
-    "liveClasses": {
-      "id": "liveClasses",
-      "type": "Custom",
-      "props": {
-        "component": "LiveClasses",
-        "heading": "Live classes",
-        "subhead": "Everything currently listed across this marketplace, straight from the live catalogue."
       }
     },
     "how": {
