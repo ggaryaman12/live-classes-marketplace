@@ -206,7 +206,7 @@ const css = `
 
 .lcs-card{ border:1px solid var(--brand-line); border-radius:var(--radius-lg); background:var(--brand-surface); overflow:hidden; box-shadow:0 1px 2px color-mix(in srgb, var(--brand-ink) 8%, transparent); transition:box-shadow var(--motion) var(--motion-ease), transform var(--motion) var(--motion-ease); }
 .lcs-card:hover{ box-shadow:0 18px 40px -24px color-mix(in srgb, var(--brand-ink) 50%, transparent); transform:translateY(-2px); }
-.lcs-media{ position:relative; display:block; aspect-ratio:4/3; overflow:hidden; background:var(--brand-accent-soft); }
+.lcs-media{ position:relative; display:block; aspect-ratio:4/3; background:var(--brand-accent-soft); }
 .lcs-media img{ width:100%; height:100%; object-fit:cover; display:block; }
 .lcs-closed{ position:absolute; left:10px; bottom:10px; padding:4px 10px; border-radius:980px; background:var(--brand-surface); border:1px solid var(--brand-line); font-size:.7rem; font-weight:600; color:var(--brand-ink-soft); }
 .lcs-body{ padding:13px 14px 14px; display:grid; gap:5px; }
