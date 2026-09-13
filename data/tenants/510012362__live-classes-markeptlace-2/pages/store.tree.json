@@ -11,7 +11,6 @@
         "header1",
         "meetInstructor",
         "approach",
-        "upcoming",
         "cat1",
         "reviews",
         "faq",
@@ -46,14 +45,6 @@
         "component": "TeacherApproach",
         "eyebrow": "How a class runs",
         "statement": "Live means a real teacher, a set time each week, and a room small enough that your child is seen."
-      }
-    },
-    "upcoming": {
-      "id": "upcoming",
-      "type": "Custom",
-      "props": {
-        "component": "UpcomingClasses",
-        "heading": "Upcoming live classes"
       }
     },
     "cat1": {
