@@ -425,7 +425,7 @@ const styles = `
   transition:box-shadow var(--motion) var(--motion-ease), transform var(--motion) var(--motion-ease);
 }
 .cs-card:hover{ box-shadow:0 20px 44px -26px color-mix(in srgb, var(--brand-ink) 55%, transparent); transform:translateY(-2px); }
-.cs-card-media{ position:relative; display:block; aspect-ratio:4/3; background:var(--brand-accent-soft); }
+.cs-card-media{ position:relative; display:block; aspect-ratio:4/3; overflow:hidden; background:var(--brand-accent-soft); }
 .cs-card-media img{ width:100%; height:100%; object-fit:cover; display:block; }
 .cs-age{
   position:absolute; left:10px; bottom:10px;
