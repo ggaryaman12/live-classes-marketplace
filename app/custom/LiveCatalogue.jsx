@@ -310,7 +310,7 @@ const css = `
 @media (min-width:900px){ .lc-grid{ grid-template-columns:repeat(3,1fr); } }
 
 .lc-card{ border:1px solid var(--brand-line); border-radius:var(--radius-lg); background:var(--brand-surface); overflow:hidden; box-shadow:0 1px 2px color-mix(in srgb, var(--brand-ink) 8%, transparent); }
-.lc-media{ display:block; aspect-ratio:4/3; background:var(--brand-accent-soft); }
+.lc-media{ display:block; aspect-ratio:4/3; overflow:hidden; background:var(--brand-accent-soft); }
 .lc-media img{ width:100%; height:100%; object-fit:cover; display:block; }
 .lc-body{ padding:14px 15px 15px; display:grid; gap:6px; }
 .lc-title-link{ text-decoration:none; color:inherit; }
