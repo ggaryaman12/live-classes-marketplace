@@ -17,6 +17,7 @@ import * as m_EnrollConfirm from './EnrollConfirm.jsx';
 import * as m_EnrollHeader from './EnrollHeader.jsx';
 import * as m_HowLiveWorks from './HowLiveWorks.jsx';
 import * as m_LiveCatalogue from './LiveCatalogue.jsx';
+import * as m_LiveClasses from './LiveClasses.jsx';
 import * as m_MeetTheInstructor from './MeetTheInstructor.jsx';
 import * as m_MyCoursesLink from './MyCoursesLink.jsx';
 import * as m_MySubscriptions from './MySubscriptions.jsx';
@@ -61,6 +62,7 @@ export const CUSTOM = Object.fromEntries(Object.entries({
   EnrollHeader: pick(m_EnrollHeader, 'EnrollHeader'),
   HowLiveWorks: pick(m_HowLiveWorks, 'HowLiveWorks'),
   LiveCatalogue: pick(m_LiveCatalogue, 'LiveCatalogue'),
+  LiveClasses: pick(m_LiveClasses, 'LiveClasses'),
   MeetTheInstructor: pick(m_MeetTheInstructor, 'MeetTheInstructor'),
   MyCoursesLink: pick(m_MyCoursesLink, 'MyCoursesLink'),
   MySubscriptions: pick(m_MySubscriptions, 'MySubscriptions'),
