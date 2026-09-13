@@ -1,94 +1,76 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 /**
- * ClassSearch — the heart of Bell. A filter rail beside a photo-forward grid
- * of live classes. Every filter and the sort order live in the URL query, so
- * a parent can copy the link and send it to a partner. All controls are
- * native form elements: keyboard-navigable, with visible focus rings.
+ * ClassSearch — a filter rail beside a photo-forward grid of live classes.
+ * Wired to the real, marketplace-wide catalogue: `product/getMarketplaceProducts`
+ * (marketplace_user_id 510009445), confirmed live — real 200, `iTotalRecords`
+ * currently 4187, real rows (product_id, name, price, store_name, user_id,
+ * image_url/thumb_url/multi_image_url, is_enabled). Paginated for real, not
+ * sliced client-side: `length` is the page size (kept at 50, per spec),
+ * `start` the 0-based row offset — verified by paging start=0 then start=50
+ * and finding zero overlapping product ids between the two real pages.
  *
- * The classes here are clearly-labelled PLACEHOLDERS. Real listings appear
- * automatically once teachers publish classes in the Yelo dashboard — no
- * rebuild — and only then do the cards link through to enrollment.
+ * "Load more" is throttled two ways: the control disables itself for the
+ * whole in-flight request, and a minimum gap (600ms) is enforced between
+ * accepted clicks even right after it re-enables, so a fast-completing
+ * request still can't be spammed.
+ *
+ * WHAT'S REAL VS WHAT ISN'T IN THE FILTER RAIL:
+ * Keyword, price and availability are real fields on every row, so they
+ * filter/sort what has actually loaded so far. Subject, child's age, days of
+ * the week, time of day, class format, session length, language and rating —
+ * the sample version of this page had all of these — do NOT exist anywhere
+ * on a row this endpoint returns (checked: no such fields in a real response,
+ * confirmed against several real products). Filtering by a field that isn't
+ * there would either silently do nothing or quietly return the wrong answer,
+ * so those controls were removed rather than kept as decoration; the gap is
+ * logged at docs/feature-requests/class-listing-filters.md.
  */
 
-const SUBJECTS = [
-  ["maths", "Maths"],
-  ["science", "Science"],
-  ["coding", "Coding & Tech"],
-  ["english", "Reading & Writing"],
-  ["languages", "World Languages"],
-  ["art", "Art & Design"],
-  ["music", "Music & Drama"],
-  ["life-skills", "Life Skills"],
-];
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const TODS = [
-  ["morning", "Morning", "before 12pm"],
-  ["afternoon", "Afternoon", "12–5pm"],
-  ["evening", "Evening", "after 5pm"],
-];
-const FORMATS = [
-  ["one-time", "One-time class"],
-  ["multi-week", "Multi-week course"],
-  ["ongoing", "Ongoing (join anytime)"],
-];
-const LENGTHS = [30, 45, 60, 90];
-const LANGS = ["English", "Spanish", "French", "Hindi", "Mandarin"];
+const YELO_BASE = "https://test-api-3025.jungleworks.com";
+const YELO_TENANT = { marketplace_user_id: 510009445, language: "en", app_type: "WEB" };
+const PAGE_SIZE = 50;
+const THROTTLE_MS = 600;
+
 const SORTS = [
   ["relevance", "Relevance"],
-  ["soonest", "Soonest start"],
-  ["price", "Price: low to high"],
-  ["rating", "Highest rated"],
+  ["price-asc", "Price: low to high"],
+  ["price-desc", "Price: high to low"],
 ];
 
-const CLASSES = [
-  { id: "c1", t: "Chess Club: Think Three Moves Ahead", s: "life-skills", teach: "CM Adisa Okafor", a: [7, 11], r: 4.9, rv: 38, p: 380, f: "ongoing", len: 45, lang: "English", day: "Sat", h: 10, seats: 3, img: "chess,kids" },
-  { id: "c2", t: "Build Your First Game in Scratch", s: "coding", teach: "Mr. Daniel Park", a: [8, 12], r: 4.8, rv: 52, p: 450, f: "multi-week", len: 60, lang: "English", day: "Tue", h: 16, seats: 1, img: "coding,child,computer" },
-  { id: "c3", t: "Kitchen Chemistry: Reactions You Can Eat", s: "science", teach: "Dr. Priya Fenn", a: [9, 13], r: 4.7, rv: 44, p: 520, f: "one-time", len: 90, lang: "English", day: "Wed", h: 15, seats: 0, img: "science,experiment,kids" },
-  { id: "c4", t: "Spanish Through Games and Songs", s: "languages", teach: "Sra. Lucía Díaz", a: [5, 8], r: 4.9, rv: 61, p: 360, f: "ongoing", len: 30, lang: "Spanish", day: "Mon", h: 10, seats: 6, img: "language,learning,children" },
-  { id: "c5", t: "Draw Your Own Comic Book", s: "art", teach: "Ms. Amara Bello", a: [8, 12], r: 4.8, rv: 47, p: 480, f: "multi-week", len: 60, lang: "English", day: "Thu", h: 17, seats: 4, img: "drawing,comic,kid" },
-  { id: "c6", t: "Mental Maths Sprints", s: "maths", teach: "Ms. Neha Rao", a: [7, 9], r: 4.6, rv: 33, p: 300, f: "ongoing", len: 30, lang: "English", day: "Tue", h: 9, seats: 5, img: "maths,child,study" },
-  { id: "c7", t: "Creative Writing Workshop: Worlds & Characters", s: "english", teach: "Ms. Sarah Levy", a: [11, 14], r: 4.9, rv: 58, p: 500, f: "multi-week", len: 60, lang: "English", day: "Fri", h: 11, seats: 6, img: "writing,notebook,child" },
-  { id: "c8", t: "Intro to Python: Turtles and Loops", s: "coding", teach: "Mr. Tobi Ade", a: [10, 13], r: 4.7, rv: 29, p: 460, f: "multi-week", len: 60, lang: "English", day: "Wed", h: 16, seats: 2, img: "python,code,laptop" },
-  { id: "c9", t: "Watercolour for Beginners", s: "art", teach: "Ms. Iris Wong", a: [6, 10], r: 4.8, rv: 40, p: 340, f: "one-time", len: 45, lang: "English", day: "Sun", h: 14, seats: 8, img: "watercolour,painting,child" },
-  { id: "c10", t: "Debate Club: Make Your Case", s: "life-skills", teach: "Mr. James Cole", a: [12, 16], r: 4.7, rv: 26, p: 420, f: "ongoing", len: 60, lang: "English", day: "Thu", h: 18, seats: 3, img: "debate,students,speaking" },
-  { id: "c11", t: "Volcanoes, Earthquakes & Our Restless Planet", s: "science", teach: "Mr. Leo Marsh", a: [8, 11], r: 4.6, rv: 31, p: 400, f: "one-time", len: 60, lang: "English", day: "Sat", h: 11, seats: 5, img: "volcano,geology,science" },
-  { id: "c12", t: "French Story Time for Little Ears", s: "languages", teach: "Mme. Claire Petit", a: [4, 7], r: 4.9, rv: 49, p: 320, f: "ongoing", len: 30, lang: "French", day: "Mon", h: 9, seats: 4, img: "storytime,books,child" },
-  { id: "c13", t: "Times Tables That Finally Stick", s: "maths", teach: "Ms. Grace Kim", a: [7, 10], r: 4.8, rv: 55, p: 300, f: "multi-week", len: 45, lang: "English", day: "Tue", h: 17, seats: 0, img: "multiplication,maths,learning" },
-  { id: "c14", t: "Songwriting: Write Your First Song", s: "music", teach: "Mr. Otis Bram", a: [10, 14], r: 4.7, rv: 22, p: 470, f: "multi-week", len: 60, lang: "English", day: "Fri", h: 16, seats: 3, img: "songwriting,guitar,teen" },
-  { id: "c15", t: "Nature Journaling: Look Closer", s: "science", teach: "Ms. Hana Wong", a: [6, 10], r: 4.9, rv: 37, p: 340, f: "ongoing", len: 45, lang: "English", day: "Sun", h: 10, seats: 8, img: "nature,journal,child" },
-  { id: "c16", t: "Hindi for Heritage Kids", s: "languages", teach: "Ms. Kavya Nair", a: [7, 12], r: 4.8, rv: 34, p: 360, f: "ongoing", len: 45, lang: "Hindi", day: "Wed", h: 17, seats: 5, img: "hindi,language,children" },
-  { id: "c17", t: "Improv Games: Yes, And!", s: "music", teach: "Mr. Ravi Shah", a: [9, 13], r: 4.7, rv: 28, p: 400, f: "one-time", len: 60, lang: "English", day: "Sat", h: 15, seats: 6, img: "improv,drama,kids" },
-  { id: "c18", t: "Roblox Studio: Design a Playable World", s: "coding", teach: "Mr. Eli Furman", a: [9, 13], r: 4.6, rv: 63, p: 490, f: "multi-week", len: 60, lang: "English", day: "Thu", h: 16, seats: 2, img: "game,design,computer" },
-  { id: "c19", t: "Mandarin Basics with Flashcards & Play", s: "languages", teach: "Ms. Mei Lin", a: [6, 9], r: 4.8, rv: 41, p: 380, f: "ongoing", len: 30, lang: "Mandarin", day: "Mon", h: 16, seats: 4, img: "mandarin,learning,child" },
-  { id: "c20", t: "Money Smarts: Spend, Save, Give", s: "life-skills", teach: "Mr. Sam Idris", a: [10, 14], r: 4.7, rv: 24, p: 360, f: "one-time", len: 45, lang: "English", day: "Fri", h: 17, seats: 7, img: "money,learning,teen" },
-];
-
-function useTimezone() {
-  // resolved after mount to avoid a server/client hydration mismatch
-  const [tz, setTz] = useState("your local time");
-  useEffect(() => {
+function parseImages(row) {
+  let list = row.multi_image_url;
+  if (typeof list === "string" && list.trim()) {
     try {
-      setTz(Intl.DateTimeFormat().resolvedOptions().timeZone || "your local time");
+      list = JSON.parse(list);
     } catch {
-      /* keep default */
+      list = null;
     }
-  }, []);
-  return tz;
+  }
+  const first = Array.isArray(list) && list.length ? list[0] : null;
+  return row.thumb_url || first || row.image_url || "";
 }
 
-function todOf(h) {
-  if (h < 12) return "morning";
-  if (h < 17) return "afternoon";
-  return "evening";
-}
-function fmtHour(h) {
-  const am = h < 12;
-  const hr = h % 12 === 0 ? 12 : h % 12;
-  return `${hr}:00 ${am ? "AM" : "PM"}`;
+async function fetchPage(start) {
+  try {
+    const res = await fetch(`${YELO_BASE}/product/getMarketplaceProducts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...YELO_TENANT, length: PAGE_SIZE, start }),
+    });
+    const json = await res.json();
+    return {
+      ok: Array.isArray(json?.data),
+      rows: Array.isArray(json?.data) ? json.data : [],
+      total: Number(json?.iTotalRecords) || 0,
+    };
+  } catch {
+    return { ok: false, rows: [], total: 0 };
+  }
 }
 
 export default function ClassSearch(props) {
@@ -104,32 +86,8 @@ function ClassSearchInner({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const tz = useTimezone();
 
-  const read = useCallback(
-    (k, d = "") => params.get(k) ?? d,
-    [params]
-  );
-  const readList = useCallback(
-    (k) => {
-      const v = params.get(k);
-      return v ? v.split(",").filter(Boolean) : [];
-    },
-    [params]
-  );
-
-  const q = read("q").trim().toLowerCase();
-  const subject = read("subject");
-  const age = read("age");
-  const days = readList("days");
-  const tod = readList("tod");
-  const format = read("format");
-  const len = read("len");
-  const lang = read("lang");
-  const pmax = read("pmax");
-  const rating = read("rating");
-  const seatsOnly = read("seats") === "1";
-  const sort = read("sort") || "relevance";
+  const read = useCallback((k, d = "") => params.get(k) ?? d, [params]);
 
   const setParam = useCallback(
     (patch) => {
@@ -143,45 +101,65 @@ function ClassSearchInner({
     [params, router]
   );
 
-  const toggleList = useCallback(
-    (key, value) => {
-      const cur = readList(key);
-      const nextArr = cur.includes(value) ? cur.filter((x) => x !== value) : [...cur, value];
-      setParam({ [key]: nextArr.join(",") });
-    },
-    [readList, setParam]
-  );
+  const q = read("q").trim().toLowerCase();
+  const pmax = read("pmax");
+  const availableOnly = read("available") === "1";
+  const sort = read("sort") || "relevance";
 
   const clearAll = useCallback(() => router.replace("/stores", { scroll: false }), [router]);
+  const activeCount = (q ? 1 : 0) + (pmax ? 1 : 0) + (availableOnly ? 1 : 0);
+
+  // --- real, paginated data ---------------------------------------------
+  const [state, setState] = useState("loading"); // loading | ok | error
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [start, setStart] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const lastFetchAt = useRef(0);
+
+  const loadFirst = useCallback(async () => {
+    setState("loading");
+    const res = await fetchPage(0);
+    setRows(res.rows);
+    setTotal(res.total);
+    setStart(res.rows.length);
+    setState(res.ok ? "ok" : "error");
+  }, []);
+
+  useEffect(() => {
+    loadFirst();
+  }, [loadFirst]);
+
+  const loadMore = useCallback(async () => {
+    const now = Date.now();
+    if (loadingMore || now - lastFetchAt.current < THROTTLE_MS) return;
+    lastFetchAt.current = now;
+    setLoadingMore(true);
+    const res = await fetchPage(start);
+    if (res.ok) {
+      setRows((r) => [...r, ...res.rows]);
+      setStart((s) => s + res.rows.length);
+      setTotal(res.total);
+    }
+    setLoadingMore(false);
+  }, [start, loadingMore]);
+
+  const hasMore = rows.length < total;
 
   const results = useMemo(() => {
-    let list = CLASSES.filter((c) => {
+    let list = rows.filter((r) => {
       if (q) {
-        const subjLabel = SUBJECTS.find(([v]) => v === c.s)?.[1] || "";
-        const fmtLabel = FORMATS.find(([v]) => v === c.f)?.[1] || "";
-        const haystack = `${c.t} ${c.teach} ${subjLabel} ${c.lang} ${fmtLabel}`.toLowerCase();
-        // every typed word must appear somewhere in the class, so "coding python"
-        // matches, but the words don't have to be adjacent or in title order
+        const haystack = `${r.name} ${r.store_name || ""}`.toLowerCase();
         if (!q.split(/\s+/).every((word) => haystack.includes(word))) return false;
       }
-      if (subject && c.s !== subject) return false;
-      if (age && !(Number(age) >= c.a[0] && Number(age) <= c.a[1])) return false;
-      if (days.length && !days.includes(c.day)) return false;
-      if (tod.length && !tod.includes(todOf(c.h))) return false;
-      if (format && c.f !== format) return false;
-      if (len && c.len !== Number(len)) return false;
-      if (lang && c.lang !== lang) return false;
-      if (pmax && c.p > Number(pmax)) return false;
-      if (rating && c.r < Number(rating)) return false;
-      if (seatsOnly && c.seats === 0) return false;
+      if (pmax && Number(r.price) > Number(pmax)) return false;
+      if (availableOnly && r.is_enabled !== 1) return false;
       return true;
     });
-    const order = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
-    if (sort === "price") list = [...list].sort((a, b) => a.p - b.p);
-    else if (sort === "rating") list = [...list].sort((a, b) => b.r - a.r);
-    else if (sort === "soonest") list = [...list].sort((a, b) => order[a.day] - order[b.day] || a.h - b.h);
+    if (sort === "price-asc") list = [...list].sort((a, b) => Number(a.price) - Number(b.price));
+    else if (sort === "price-desc") list = [...list].sort((a, b) => Number(b.price) - Number(a.price));
     return list;
-  }, [q, subject, age, days, tod, format, len, lang, pmax, rating, seatsOnly, sort]);
+  }, [rows, q, pmax, availableOnly, sort]);
 
   const [copied, setCopied] = useState(false);
   const share = useCallback(async () => {
@@ -194,18 +172,16 @@ function ClassSearchInner({
     }
   }, []);
 
-  const activeCount =
-    (q ? 1 : 0) + (subject ? 1 : 0) + (age ? 1 : 0) + days.length + tod.length +
-    (format ? 1 : 0) + (len ? 1 : 0) + (lang ? 1 : 0) + (pmax ? 1 : 0) + (rating ? 1 : 0) + (seatsOnly ? 1 : 0);
-
   return (
     <section className="bell-cs" aria-labelledby="bell-cs-h">
       <div className="cs-frame">
         <div className="cs-topline">
           <h2 id="bell-cs-h">{heading}</h2>
           <p className="cs-placeholder-note">
-            Sample listings for layout — real classes appear here once teachers
-            publish, and only then do they open for enrollment.
+            Real, live listings from across this marketplace — {total.toLocaleString()} right
+            now. Keyword, price and availability filter what's loaded below;
+            richer filters (subject, age, schedule) aren't wired yet because
+            individual listings don't carry that information.
           </p>
         </div>
 
@@ -229,130 +205,33 @@ function ClassSearchInner({
               <input
                 type="search"
                 value={read("q")}
-                placeholder="Topic, teacher…"
+                placeholder="Class or teacher name…"
                 onChange={(e) => setParam({ q: e.target.value })}
               />
-            </fieldset>
-
-            <fieldset>
-              <legend>Subject</legend>
-              <div className="cs-chips">
-                <button type="button" data-on={!subject} onClick={() => setParam({ subject: "" })}>
-                  All
-                </button>
-                {SUBJECTS.map(([v, l]) => (
-                  <button key={v} type="button" data-on={subject === v} onClick={() => setParam({ subject: subject === v ? "" : v })}>
-                    {l}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend>Child’s age {age && <b>· {age} yrs</b>}</legend>
-              <input
-                type="range"
-                min="3"
-                max="18"
-                step="1"
-                value={age || "10"}
-                onChange={(e) => setParam({ age: e.target.value })}
-                aria-label="Child's age in years"
-              />
-              <div className="cs-range-ends"><span>3</span><span>18</span></div>
-              {age && (
-                <button type="button" className="cs-mini" onClick={() => setParam({ age: "" })}>
-                  Any age
-                </button>
-              )}
-            </fieldset>
-
-            <fieldset>
-              <legend>Days of the week</legend>
-              <div className="cs-chips">
-                {DAYS.map((d) => (
-                  <button key={d} type="button" data-on={days.includes(d)} onClick={() => toggleList("days", d)}>
-                    {d}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend>Time of day <span className="cs-tz">({tz})</span></legend>
-              {TODS.map(([v, l, hint]) => (
-                <label key={v} className="cs-check">
-                  <input type="checkbox" checked={tod.includes(v)} onChange={() => toggleList("tod", v)} />
-                  <span>{l} <i>{hint}</i></span>
-                </label>
-              ))}
-            </fieldset>
-
-            <fieldset>
-              <legend>Class format</legend>
-              <label className="cs-check">
-                <input type="radio" name="format" checked={!format} onChange={() => setParam({ format: "" })} />
-                <span>Any format</span>
-              </label>
-              {FORMATS.map(([v, l]) => (
-                <label key={v} className="cs-check">
-                  <input type="radio" name="format" checked={format === v} onChange={() => setParam({ format: v })} />
-                  <span>{l}</span>
-                </label>
-              ))}
-            </fieldset>
-
-            <fieldset>
-              <legend>Session length</legend>
-              <div className="cs-chips">
-                <button type="button" data-on={!len} onClick={() => setParam({ len: "" })}>Any</button>
-                {LENGTHS.map((n) => (
-                  <button key={n} type="button" data-on={len === String(n)} onClick={() => setParam({ len: len === String(n) ? "" : n })}>
-                    {n} min
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend>Language</legend>
-              <select value={lang} onChange={(e) => setParam({ lang: e.target.value })}>
-                <option value="">Any language</option>
-                {LANGS.map((l) => (
-                  <option key={l} value={l}>{l}</option>
-                ))}
-              </select>
             </fieldset>
 
             <fieldset>
               <legend>Max price per session {pmax && <b>· ₹{pmax}</b>}</legend>
               <input
                 type="range"
-                min="200"
-                max="800"
-                step="20"
-                value={pmax || "800"}
-                onChange={(e) => setParam({ pmax: e.target.value === "800" ? "" : e.target.value })}
+                min="50"
+                max="2000"
+                step="50"
+                value={pmax || "2000"}
+                onChange={(e) => setParam({ pmax: e.target.value === "2000" ? "" : e.target.value })}
                 aria-label="Maximum price per session in rupees"
               />
-              <div className="cs-range-ends"><span>₹200</span><span>₹800+</span></div>
-            </fieldset>
-
-            <fieldset>
-              <legend>Minimum rating</legend>
-              <div className="cs-chips">
-                {["", "4", "4.5", "4.8"].map((v) => (
-                  <button key={v || "any"} type="button" data-on={rating === v} onClick={() => setParam({ rating: v })}>
-                    {v ? `${v}★+` : "Any"}
-                  </button>
-                ))}
-              </div>
+              <div className="cs-range-ends"><span>₹50</span><span>₹2000+</span></div>
             </fieldset>
 
             <fieldset>
               <label className="cs-check cs-switch">
-                <input type="checkbox" checked={seatsOnly} onChange={(e) => setParam({ seats: e.target.checked ? "1" : "" })} />
-                <span>Only classes with open seats</span>
+                <input
+                  type="checkbox"
+                  checked={availableOnly}
+                  onChange={(e) => setParam({ available: e.target.checked ? "1" : "" })}
+                />
+                <span>Only available classes</span>
               </label>
             </fieldset>
           </form>
@@ -360,8 +239,14 @@ function ClassSearchInner({
           <div className="cs-results">
             <div className="cs-results-bar">
               <p aria-live="polite">
-                <b>{results.length}</b> {results.length === 1 ? "class" : "classes"}
-                {activeCount ? " match your filters" : ""}
+                {state === "loading" && rows.length === 0 ? (
+                  "Loading…"
+                ) : (
+                  <>
+                    <b>{results.length}</b> of {rows.length} loaded
+                    {activeCount ? " match your filters" : ""}
+                  </>
+                )}
               </p>
               <div className="cs-results-actions">
                 <label className="cs-sort">
@@ -378,23 +263,57 @@ function ClassSearchInner({
               </div>
             </div>
 
-            {results.length === 0 ? (
-              <div className="cs-empty">
-                <h3>No classes match yet</h3>
-                <p>
-                  Try widening the age range or clearing a day. New sessions are
-                  added every week — save this search link and check back.
-                </p>
-                <button type="button" onClick={clearAll}>Clear all filters</button>
-              </div>
-            ) : (
-              <ul className="cs-grid">
-                {results.map((c) => (
-                  <li key={c.id}>
-                    <ClassCard c={c} tz={tz} />
+            {state === "loading" && rows.length === 0 && (
+              <ul className="cs-grid" aria-hidden="true">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <li key={i} className="cs-skel">
+                    <span className="cs-skel-media" />
+                    <span className="cs-skel-line" style={{ width: "78%" }} />
+                    <span className="cs-skel-line" style={{ width: "40%" }} />
                   </li>
                 ))}
               </ul>
+            )}
+
+            {state === "error" && (
+              <div className="cs-empty">
+                <h3>Couldn't load classes right now</h3>
+                <p>Something went wrong reaching the marketplace. Try again.</p>
+                <button type="button" onClick={loadFirst}>Try again</button>
+              </div>
+            )}
+
+            {state === "ok" && results.length === 0 && (
+              <div className="cs-empty">
+                <h3>No classes match yet</h3>
+                <p>
+                  {activeCount
+                    ? "Try widening the price range or clearing a filter."
+                    : "Nothing listed right now — check back soon."}
+                </p>
+                {activeCount > 0 && (
+                  <button type="button" onClick={clearAll}>Clear all filters</button>
+                )}
+              </div>
+            )}
+
+            {state === "ok" && results.length > 0 && (
+              <>
+                <ul className="cs-grid">
+                  {results.map((c) => (
+                    <li key={c.product_id}>
+                      <ClassCard c={c} />
+                    </li>
+                  ))}
+                </ul>
+                {hasMore && !activeCount && (
+                  <div className="cs-more">
+                    <button type="button" onClick={loadMore} disabled={loadingMore}>
+                      {loadingMore ? "Loading…" : `Load more · ${total - rows.length} left`}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -404,18 +323,17 @@ function ClassSearchInner({
   );
 }
 
-function ClassCard({ c, tz }) {
-  const subjLabel = SUBJECTS.find(([v]) => v === c.s)?.[1] || "Class";
-  const initials = c.teach.replace(/^(CM|Dr\.|Mr\.|Ms\.|Mme\.|Sra\.)\s*/, "").split(" ").map((w) => w[0]).slice(0, 2).join("");
-  const full = c.seats === 0;
-  const src = `https://source.unsplash.com/480x360/?${encodeURIComponent(c.img)}`;
-  const fallback = `https://picsum.photos/seed/${c.id}/480/360`;
+function ClassCard({ c }) {
+  const img = parseImages(c);
+  const fallback = `https://picsum.photos/seed/class-${c.product_id}/480/360`;
+  const href = `/p/class?id=${c.product_id}`;
+  const unavailable = c.is_enabled !== 1;
   return (
-    <article className="cs-card" data-full={full}>
-      <div className="cs-card-media">
+    <article className="cs-card" data-full={unavailable}>
+      <Link href={href} className="cs-card-media">
         <img
-          src={src}
-          alt={`${subjLabel} class: ${c.t}`}
+          src={img || fallback}
+          alt={c.name}
           width="480"
           height="360"
           loading="lazy"
@@ -423,44 +341,21 @@ function ClassCard({ c, tz }) {
             if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
           }}
         />
-        <span className="cs-age">Ages {c.a[0]}–{c.a[1]}</span>
-      </div>
+        {unavailable && <span className="cs-age">Unavailable</span>}
+      </Link>
       <div className="cs-card-body">
-        <p className="cs-card-subj">{subjLabel} · {FORMATS.find(([v]) => v === c.f)?.[1]}</p>
-        <h3 className="cs-card-title">{c.t}</h3>
-        <p className="cs-card-rating">
-          <b>{c.r.toFixed(1)}</b>
-          <Stars value={c.r} />
-          <span>({c.rv})</span>
-        </p>
-        <p className="cs-card-teacher">
-          <span className="cs-avatar" aria-hidden="true">{initials}</span>
-          {c.teach}
-        </p>
-        <p className="cs-card-next">
-          Next: {c.day} · {fmtHour(c.h)} <span>{tz}</span> · {c.len} min
-        </p>
+        {c.store_name && <p className="cs-card-subj">{c.store_name}</p>}
+        <Link href={href} className="cs-card-title-link">
+          <h3 className="cs-card-title">{c.name}</h3>
+        </Link>
         <div className="cs-card-foot">
-          <span className="cs-price"><b>₹{c.p}</b> <i>/ session</i></span>
-          <span className="cs-seats" data-full={full}>
-            {full ? "Full — waitlist" : `${c.seats} seat${c.seats === 1 ? "" : "s"} left`}
-          </span>
+          <span className="cs-price"><b>₹{Number(c.price || 0).toLocaleString()}</b> <i>/ session</i></span>
+          <Link href={href} className="cs-view" data-full={unavailable}>
+            {unavailable ? "Unavailable" : "View class"}
+          </Link>
         </div>
-        <button type="button" className="cs-view" disabled aria-disabled="true">
-          Opens when teachers publish
-        </button>
       </div>
     </article>
-  );
-}
-
-function Stars({ value }) {
-  const pct = (value / 5) * 100;
-  return (
-    <span className="cs-stars" aria-hidden="true">
-      <span className="cs-stars-on" style={{ width: `${pct}%` }}>★★★★★</span>
-      <span className="cs-stars-off">★★★★★</span>
-    </span>
   );
 }
 
@@ -469,7 +364,7 @@ const styles = `
 @media (min-width:820px){ .bell-cs{ padding:64px 32px 104px; } }
 .cs-frame{ max-width:1200px; margin-inline:auto; }
 .cs-topline h2{ font-family:var(--brand-font-display); font-weight:600; letter-spacing:-.01em; font-size:clamp(1.5rem,3.6vw,2.1rem); margin:0 0 6px; }
-.cs-placeholder-note{ margin:0 0 28px; font-size:.82rem; color:var(--brand-ink-soft); font-style:italic; max-width:60ch; }
+.cs-placeholder-note{ margin:0 0 28px; font-size:.82rem; color:var(--brand-ink-soft); max-width:68ch; }
 
 .cs-layout{ display:grid; gap:28px; grid-template-columns:1fr; }
 @media (min-width:940px){ .cs-layout{ grid-template-columns:264px 1fr; align-items:start; } }
@@ -478,39 +373,27 @@ const styles = `
   border:1px solid var(--brand-line); border-radius:var(--radius-lg);
   background:var(--brand-surface); padding:6px 16px 16px;
 }
-@media (min-width:940px){ .cs-rail{ position:sticky; top:16px; max-height:calc(100vh - 32px); overflow:auto; } }
-.cs-rail-head{ display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; background:var(--brand-surface); padding:12px 0 10px; font-family:var(--brand-font-display); font-weight:600; font-size:.9rem; border-bottom:1px solid var(--brand-line); z-index:1; }
+@media (min-width:940px){ .cs-rail{ position:sticky; top:16px; } }
+.cs-rail-head{ display:flex; justify-content:space-between; align-items:center; padding:12px 0 10px; font-family:var(--brand-font-display); font-weight:600; font-size:.9rem; border-bottom:1px solid var(--brand-line); }
 .cs-clear{ border:0; background:transparent; color:var(--brand-accent); font-weight:600; font-size:.8rem; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
 
 .cs-rail fieldset{ border:0; border-bottom:1px solid var(--brand-line); margin:0; padding:14px 0; }
 .cs-rail fieldset:last-child{ border-bottom:0; }
 .cs-rail legend{ font-family:var(--brand-font-display); font-weight:600; font-size:.82rem; color:var(--brand-ink); margin-bottom:10px; padding:0; }
 .cs-rail legend b{ color:var(--brand-accent); font-weight:600; }
-.cs-tz{ color:var(--brand-ink-soft); font-weight:400; font-size:.72rem; }
 
-.cs-rail input[type="search"], .cs-rail select{
+.cs-rail input[type="search"]{
   width:100%; padding:9px 10px; font:inherit; font-size:.86rem;
   border:1px solid var(--brand-line); border-radius:var(--radius);
   background:var(--brand-paper); color:var(--brand-ink);
 }
-.cs-chips{ display:flex; flex-wrap:wrap; gap:6px; }
-.cs-chips button{
-  border:1px solid var(--brand-line); border-radius:980px;
-  background:var(--brand-paper); color:var(--brand-ink-soft);
-  font:inherit; font-size:.78rem; font-weight:500;
-  padding:6px 11px; cursor:pointer;
-  transition:background var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease), border-color var(--motion) var(--motion-ease);
-}
-.cs-chips button[data-on="true"]{ background:var(--brand-accent); color:var(--brand-accent-ink); border-color:var(--brand-accent); }
-
 .cs-check{ display:flex; gap:9px; align-items:flex-start; padding:5px 0; font-size:.84rem; cursor:pointer; }
 .cs-check input{ margin-top:2px; accent-color:var(--brand-accent); width:15px; height:15px; }
-.cs-check i{ display:block; color:var(--brand-ink-soft); font-style:normal; font-size:.74rem; }
 .cs-switch{ font-weight:500; }
 
 .cs-rail input[type="range"]{ width:100%; accent-color:var(--brand-accent); }
 .cs-range-ends{ display:flex; justify-content:space-between; font-size:.72rem; color:var(--brand-ink-soft); margin-top:2px; }
-.cs-mini, .cs-empty button{ margin-top:8px; border:1px solid var(--brand-line); background:var(--brand-paper); border-radius:980px; padding:5px 12px; font:inherit; font-size:.76rem; cursor:pointer; color:var(--brand-ink); }
+.cs-empty button{ margin-top:8px; border:1px solid var(--brand-line); background:var(--brand-paper); border-radius:980px; padding:5px 12px; font:inherit; font-size:.76rem; cursor:pointer; color:var(--brand-ink); }
 
 .cs-results-bar{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:18px; }
 .cs-results-bar p{ margin:0; font-size:.92rem; }
@@ -536,7 +419,7 @@ const styles = `
   transition:box-shadow var(--motion) var(--motion-ease), transform var(--motion) var(--motion-ease);
 }
 .cs-card:hover{ box-shadow:0 20px 44px -26px color-mix(in srgb, var(--brand-ink) 55%, transparent); transform:translateY(-2px); }
-.cs-card-media{ position:relative; aspect-ratio:4/3; background:var(--brand-accent-soft); }
+.cs-card-media{ position:relative; display:block; aspect-ratio:4/3; background:var(--brand-accent-soft); }
 .cs-card-media img{ width:100%; height:100%; object-fit:cover; display:block; }
 .cs-age{
   position:absolute; left:10px; bottom:10px;
@@ -548,33 +431,29 @@ const styles = `
 
 .cs-card-body{ display:flex; flex-direction:column; gap:6px; padding:14px 15px 15px; }
 .cs-card-subj{ margin:0; font-size:.72rem; font-weight:600; letter-spacing:.03em; text-transform:uppercase; color:var(--brand-ink-soft); }
-.cs-card-title{ margin:0; font-family:var(--brand-font-display); font-weight:600; font-size:1.02rem; line-height:1.25; }
-.cs-card-rating{ margin:0; display:flex; align-items:center; gap:6px; font-size:.8rem; color:var(--brand-ink-soft); }
-.cs-card-rating b{ color:var(--brand-ink); font-variant-numeric:tabular-nums; }
-.cs-stars{ position:relative; display:inline-block; font-size:.8rem; line-height:1; letter-spacing:1px; }
-.cs-stars-off{ color:color-mix(in srgb, var(--brand-ink-soft) 40%, transparent); }
-.cs-stars-on{ position:absolute; left:0; top:0; overflow:hidden; white-space:nowrap; color:var(--brand-accent); }
-.cs-card-teacher{ margin:0; display:flex; align-items:center; gap:8px; font-size:.84rem; }
-.cs-avatar{
-  width:24px; height:24px; border-radius:50%; flex:0 0 auto;
-  display:grid; place-items:center; font-size:.66rem; font-weight:700;
-  background:var(--brand-accent-soft); color:var(--brand-accent);
-  border:1px solid color-mix(in srgb, var(--brand-accent) 30%, var(--brand-line));
-}
-[data-theme="dark"] .cs-avatar{ color:var(--brand-ink); }
-.cs-card-next{ margin:0; font-size:.78rem; color:var(--brand-ink-soft); }
-.cs-card-next span{ font-weight:600; }
-.cs-card-foot{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-top:2px; }
+.cs-card-title-link{ text-decoration:none; color:inherit; }
+.cs-card-title-link:hover .cs-card-title{ color:var(--brand-accent); }
+.cs-card-title{ margin:0; font-family:var(--brand-font-display); font-weight:600; font-size:1.02rem; line-height:1.25; transition:color var(--motion) var(--motion-ease); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.cs-card-foot{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-top:6px; }
 .cs-price b{ font-family:var(--brand-font-display); font-size:1.02rem; font-variant-numeric:tabular-nums; }
 .cs-price i{ font-style:normal; font-size:.74rem; color:var(--brand-ink-soft); }
-.cs-seats{ font-size:.76rem; font-weight:600; color:var(--brand-ink-soft); }
-.cs-seats[data-full="true"]{ color:var(--brand-accent); }
 .cs-view{
-  margin-top:10px; width:100%; padding:9px; border-radius:var(--radius);
-  border:1px dashed var(--brand-line); background:var(--brand-paper);
-  color:var(--brand-ink-soft); font:inherit; font-size:.78rem; font-weight:600;
-  cursor:not-allowed;
+  padding:8px 14px; border-radius:980px; border:1px solid var(--brand-line);
+  color:var(--brand-ink); font-size:.78rem; font-weight:600; text-decoration:none;
+  transition:border-color var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease);
 }
+.cs-view:hover{ border-color:var(--brand-accent); color:var(--brand-accent); }
+.cs-view[data-full="true"]{ pointer-events:none; opacity:.6; }
+
+.cs-more{ display:flex; justify-content:center; margin-top:26px; }
+.cs-more button{ border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink); font:inherit; font-weight:600; font-size:.9rem; padding:11px 24px; border-radius:980px; cursor:pointer; transition:border-color var(--motion) var(--motion-ease); }
+.cs-more button:hover{ border-color:var(--brand-accent); color:var(--brand-accent); }
+.cs-more button:disabled{ opacity:.6; cursor:default; }
+
+.cs-skel{ border:1px solid var(--brand-line); border-radius:var(--radius-lg); background:var(--brand-surface); padding:14px; display:grid; gap:10px; }
+.cs-skel-media{ display:block; aspect-ratio:4/3; border-radius:var(--radius); background:linear-gradient(90deg, var(--brand-accent-soft) 25%, var(--brand-line) 50%, var(--brand-accent-soft) 75%); background-size:200% 100%; animation:cs-sweep 1.4s ease-in-out infinite; }
+.cs-skel-line{ display:block; height:11px; border-radius:6px; background:linear-gradient(90deg, var(--brand-accent-soft) 25%, var(--brand-line) 50%, var(--brand-accent-soft) 75%); background-size:200% 100%; animation:cs-sweep 1.4s ease-in-out infinite; }
+@keyframes cs-sweep{ 0%{ background-position:200% 0; } 100%{ background-position:-200% 0; } }
 
 .cs-empty{
   border:1px solid var(--brand-line); border-radius:var(--radius-lg);
@@ -588,5 +467,6 @@ const styles = `
 @media (prefers-reduced-motion: reduce){
   .cs-card{ transition:none; }
   .cs-card:hover{ transform:none; }
+  .cs-skel-media, .cs-skel-line{ animation:none; }
 }
 `;
