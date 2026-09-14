@@ -41,6 +41,9 @@ const SORTS = [
   ["price-asc", "Price: low to high"],
   ["price-desc", "Price: high to low"],
 ];
+const PRICE_MIN = 50;
+const PRICE_MAX = 2000;
+const pricePct = (v) => ((Number(v) - PRICE_MIN) / (PRICE_MAX - PRICE_MIN)) * 100;
 
 function parseImages(row) {
   let list = row.multi_image_url;
@@ -257,31 +260,33 @@ function ClassSearchInner({
                   <b> · ₹{pmin || 50}–{pmax ? `₹${pmax}` : "₹2000+"}</b>
                 )}
               </legend>
-              <div className="cs-price-range">
-                <label className="cs-price-field">
-                  <span>Min</span>
-                  <input
-                    type="range"
-                    min="50"
-                    max="2000"
-                    step="50"
-                    value={pmin || "50"}
-                    onChange={(e) => setMinPrice(e.target.value)}
-                    aria-label="Minimum price per session in rupees"
-                  />
-                </label>
-                <label className="cs-price-field">
-                  <span>Max</span>
-                  <input
-                    type="range"
-                    min="50"
-                    max="2000"
-                    step="50"
-                    value={pmax || "2000"}
-                    onChange={(e) => setMaxPrice(e.target.value)}
-                    aria-label="Maximum price per session in rupees"
-                  />
-                </label>
+              <div className="cs-price-slider">
+                <span className="cs-price-track" />
+                <span
+                  className="cs-price-fill"
+                  style={{
+                    left: `${pricePct(pmin || 50)}%`,
+                    right: `${100 - pricePct(pmax || 2000)}%`,
+                  }}
+                />
+                <input
+                  type="range"
+                  min="50"
+                  max="2000"
+                  step="50"
+                  value={pmin || "50"}
+                  onChange={(e) => setMinPrice(e.target.value)}
+                  aria-label="Minimum price per session in rupees"
+                />
+                <input
+                  type="range"
+                  min="50"
+                  max="2000"
+                  step="50"
+                  value={pmax || "2000"}
+                  onChange={(e) => setMaxPrice(e.target.value)}
+                  aria-label="Maximum price per session in rupees"
+                />
               </div>
               <div className="cs-range-ends"><span>₹50</span><span>₹2000+</span></div>
             </fieldset>
@@ -452,8 +457,40 @@ const styles = `
 .cs-switch{ font-weight:500; }
 
 .cs-rail input[type="range"]{ width:100%; accent-color:var(--brand-accent); }
-.cs-price-range{ display:grid; gap:8px; }
-.cs-price-field{ display:grid; grid-template-columns:34px 1fr; align-items:center; gap:8px; font-size:.76rem; color:var(--brand-ink-soft); font-weight:600; }
+
+/* One bar, two handles: two native range inputs stacked exactly on top of
+   each other (each still its own real, independently focusable control —
+   keyboard and screen-reader behaviour stay intact), tracks made invisible
+   so only the thumbs show, with a plain div underneath drawing the track
+   and the coloured fill between the two current values. */
+.cs-price-slider{ position:relative; height:28px; display:flex; align-items:center; }
+.cs-price-track{
+  position:absolute; left:0; right:0; height:4px; border-radius:4px;
+  background:var(--brand-line);
+}
+.cs-price-fill{
+  position:absolute; height:4px; border-radius:4px; background:var(--brand-accent);
+}
+.cs-price-slider input[type="range"]{
+  position:absolute; left:0; right:0; width:100%; margin:0;
+  background:transparent; pointer-events:none;
+  -webkit-appearance:none; appearance:none;
+}
+.cs-price-slider input[type="range"]::-webkit-slider-runnable-track{ background:transparent; }
+.cs-price-slider input[type="range"]::-moz-range-track{ background:transparent; border:0; }
+.cs-price-slider input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none; pointer-events:auto; cursor:pointer;
+  width:16px; height:16px; margin-top:-6px; border-radius:50%;
+  background:var(--brand-accent); border:2px solid var(--brand-surface);
+  box-shadow:0 1px 3px color-mix(in srgb, var(--brand-ink) 35%, transparent);
+}
+.cs-price-slider input[type="range"]::-moz-range-thumb{
+  pointer-events:auto; cursor:pointer; width:16px; height:16px; border-radius:50%;
+  background:var(--brand-accent); border:2px solid var(--brand-surface);
+  box-shadow:0 1px 3px color-mix(in srgb, var(--brand-ink) 35%, transparent);
+}
+.cs-price-slider input[type="range"]:focus-visible::-webkit-slider-thumb{ outline:3px solid var(--brand-accent); outline-offset:2px; }
+.cs-price-slider input[type="range"]:focus-visible::-moz-range-thumb{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 .cs-range-ends{ display:flex; justify-content:space-between; font-size:.72rem; color:var(--brand-ink-soft); margin-top:2px; }
 .cs-empty button{ margin-top:8px; border:1px solid var(--brand-line); background:var(--brand-paper); border-radius:980px; padding:5px 12px; font:inherit; font-size:.76rem; cursor:pointer; color:var(--brand-ink); }
 
