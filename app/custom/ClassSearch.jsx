@@ -104,7 +104,24 @@ function ClassSearchInner({
     [params, router]
   );
 
-  const q = read("q").trim().toLowerCase();
+  const qFromUrl = read("q");
+  const q = qFromUrl.trim().toLowerCase();
+
+  // The keyword field types like a normal input (instant), but the actual
+  // filter — which rewrites the URL via setParam — only fires 300ms after
+  // typing stops, so a fast typist doesn't spam a URL update (and a
+  // re-filter of everything loaded) on every single keystroke.
+  const [qInput, setQInput] = useState(qFromUrl);
+  const qDebounceRef = useRef(null);
+  useEffect(() => {
+    setQInput(qFromUrl);
+  }, [qFromUrl]);
+  useEffect(() => () => clearTimeout(qDebounceRef.current), []);
+  const onKeywordChange = (value) => {
+    setQInput(value);
+    clearTimeout(qDebounceRef.current);
+    qDebounceRef.current = setTimeout(() => setParam({ q: value }), 300);
+  };
   const pmin = read("pmin");
   const pmax = read("pmax");
   const availableOnly = read("available") === "1";
@@ -248,9 +265,9 @@ function ClassSearchInner({
               <legend>Keyword</legend>
               <input
                 type="search"
-                value={read("q")}
+                value={qInput}
                 placeholder="Class or teacher name…"
-                onChange={(e) => setParam({ q: e.target.value })}
+                onChange={(e) => onKeywordChange(e.target.value)}
               />
             </fieldset>
 
