@@ -102,12 +102,35 @@ function ClassSearchInner({
   );
 
   const q = read("q").trim().toLowerCase();
+  const pmin = read("pmin");
   const pmax = read("pmax");
   const availableOnly = read("available") === "1";
   const sort = read("sort") || "relevance";
 
   const clearAll = useCallback(() => router.replace("/stores", { scroll: false }), [router]);
-  const activeCount = (q ? 1 : 0) + (pmax ? 1 : 0) + (availableOnly ? 1 : 0);
+  const activeCount = (q ? 1 : 0) + (pmin ? 1 : 0) + (pmax ? 1 : 0) + (availableOnly ? 1 : 0);
+
+  // A minimum above the current maximum (or the reverse) would silently zero
+  // out every result — nudge the other bound along instead of letting that
+  // happen, same as any real price-range control.
+  const setMinPrice = useCallback(
+    (v) => {
+      const nextMin = v === "50" ? "" : v;
+      const patch = { pmin: nextMin };
+      if (nextMin && pmax && Number(nextMin) > Number(pmax)) patch.pmax = nextMin;
+      setParam(patch);
+    },
+    [pmax, setParam]
+  );
+  const setMaxPrice = useCallback(
+    (v) => {
+      const nextMax = v === "2000" ? "" : v;
+      const patch = { pmax: nextMax };
+      if (nextMax && pmin && Number(nextMax) < Number(pmin)) patch.pmin = nextMax;
+      setParam(patch);
+    },
+    [pmin, setParam]
+  );
 
   // --- real, paginated data ---------------------------------------------
   const [state, setState] = useState("loading"); // loading | ok | error
@@ -180,6 +203,7 @@ function ClassSearchInner({
         const haystack = `${r.name} ${r.store_name || ""}`.toLowerCase();
         if (!q.split(/\s+/).every((word) => haystack.includes(word))) return false;
       }
+      if (pmin && Number(r.price) < Number(pmin)) return false;
       if (pmax && Number(r.price) > Number(pmax)) return false;
       if (availableOnly && r.is_enabled !== 1) return false;
       return true;
@@ -187,7 +211,7 @@ function ClassSearchInner({
     if (sort === "price-asc") list = [...list].sort((a, b) => Number(a.price) - Number(b.price));
     else if (sort === "price-desc") list = [...list].sort((a, b) => Number(b.price) - Number(a.price));
     return list;
-  }, [rows, q, pmax, availableOnly, sort]);
+  }, [rows, q, pmin, pmax, availableOnly, sort]);
 
   return (
     <section className="bell-cs" aria-labelledby="bell-cs-h">
@@ -228,16 +252,37 @@ function ClassSearchInner({
             </fieldset>
 
             <fieldset>
-              <legend>Max price per session {pmax && <b>· ₹{pmax}</b>}</legend>
-              <input
-                type="range"
-                min="50"
-                max="2000"
-                step="50"
-                value={pmax || "2000"}
-                onChange={(e) => setParam({ pmax: e.target.value === "2000" ? "" : e.target.value })}
-                aria-label="Maximum price per session in rupees"
-              />
+              <legend>
+                Price per session{(pmin || pmax) && (
+                  <b> · ₹{pmin || 50}–{pmax ? `₹${pmax}` : "₹2000+"}</b>
+                )}
+              </legend>
+              <div className="cs-price-range">
+                <label className="cs-price-field">
+                  <span>Min</span>
+                  <input
+                    type="range"
+                    min="50"
+                    max="2000"
+                    step="50"
+                    value={pmin || "50"}
+                    onChange={(e) => setMinPrice(e.target.value)}
+                    aria-label="Minimum price per session in rupees"
+                  />
+                </label>
+                <label className="cs-price-field">
+                  <span>Max</span>
+                  <input
+                    type="range"
+                    min="50"
+                    max="2000"
+                    step="50"
+                    value={pmax || "2000"}
+                    onChange={(e) => setMaxPrice(e.target.value)}
+                    aria-label="Maximum price per session in rupees"
+                  />
+                </label>
+              </div>
               <div className="cs-range-ends"><span>₹50</span><span>₹2000+</span></div>
             </fieldset>
 
@@ -407,6 +452,8 @@ const styles = `
 .cs-switch{ font-weight:500; }
 
 .cs-rail input[type="range"]{ width:100%; accent-color:var(--brand-accent); }
+.cs-price-range{ display:grid; gap:8px; }
+.cs-price-field{ display:grid; grid-template-columns:34px 1fr; align-items:center; gap:8px; font-size:.76rem; color:var(--brand-ink-soft); font-weight:600; }
 .cs-range-ends{ display:flex; justify-content:space-between; font-size:.72rem; color:var(--brand-ink-soft); margin-top:2px; }
 .cs-empty button{ margin-top:8px; border:1px solid var(--brand-line); background:var(--brand-paper); border-radius:980px; padding:5px 12px; font:inherit; font-size:.76rem; cursor:pointer; color:var(--brand-ink); }
 
