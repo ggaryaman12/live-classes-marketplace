@@ -124,11 +124,12 @@ function ClassSearchInner({
   };
   const pmin = read("pmin");
   const pmax = read("pmax");
+  const age = read("age");
   const availableOnly = read("available") === "1";
   const sort = read("sort") || "relevance";
 
   const clearAll = useCallback(() => router.replace("/stores", { scroll: false }), [router]);
-  const activeCount = (q ? 1 : 0) + (pmin ? 1 : 0) + (pmax ? 1 : 0) + (availableOnly ? 1 : 0);
+  const activeCount = (q ? 1 : 0) + (pmin ? 1 : 0) + (pmax ? 1 : 0) + (age ? 1 : 0) + (availableOnly ? 1 : 0);
 
   // A minimum above the current maximum (or the reverse) would silently zero
   // out every result — nudge the other bound along instead of letting that
@@ -225,13 +226,22 @@ function ClassSearchInner({
       }
       if (pmin && Number(r.price) < Number(pmin)) return false;
       if (pmax && Number(r.price) > Number(pmax)) return false;
+      if (age) {
+        // A listing with no age range set isn't excluded — every real
+        // product here has min_age/max_age null right now (confirmed live
+        // across hundreds of rows), so treating "unset" as "not for this
+        // age" would hide the entire catalogue rather than just narrow it.
+        const kidAge = Number(age);
+        if (r.min_age != null && kidAge < Number(r.min_age)) return false;
+        if (r.max_age != null && kidAge > Number(r.max_age)) return false;
+      }
       if (availableOnly && r.is_enabled !== 1) return false;
       return true;
     });
     if (sort === "price-asc") list = [...list].sort((a, b) => Number(a.price) - Number(b.price));
     else if (sort === "price-desc") list = [...list].sort((a, b) => Number(b.price) - Number(a.price));
     return list;
-  }, [rows, q, pmin, pmax, availableOnly, sort]);
+  }, [rows, q, pmin, pmax, age, availableOnly, sort]);
 
   return (
     <section className="bell-cs" aria-labelledby="bell-cs-h">
@@ -240,9 +250,11 @@ function ClassSearchInner({
           <h2 id="bell-cs-h">{heading}</h2>
           <p className="cs-placeholder-note">
             Real, live listings from across this marketplace — {total.toLocaleString()} right
-            now. Keyword, price and availability filter what's loaded below;
-            richer filters (subject, age, schedule) aren't wired yet because
-            individual listings don't carry that information.
+            now. Keyword, price, age and availability filter what's loaded
+            below; subject and schedule aren't wired yet because individual
+            listings don't carry that information. No class here has an age
+            range set yet, so the age filter won't narrow anything down until
+            one does — it won't hide listings that simply haven't set one.
           </p>
         </div>
 
@@ -306,6 +318,25 @@ function ClassSearchInner({
                 />
               </div>
               <div className="cs-range-ends"><span>₹50</span><span>₹2000+</span></div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Child's age {age && <b>· {age} yrs</b>}</legend>
+              <input
+                type="range"
+                min="3"
+                max="18"
+                step="1"
+                value={age || "10"}
+                onChange={(e) => setParam({ age: e.target.value })}
+                aria-label="Child's age in years"
+              />
+              <div className="cs-range-ends"><span>3</span><span>18</span></div>
+              {age && (
+                <button type="button" className="cs-age-clear" onClick={() => setParam({ age: "" })}>
+                  Any age
+                </button>
+              )}
             </fieldset>
 
             <fieldset>
@@ -404,6 +435,18 @@ function ClassCard({ c }) {
   const fallback = `https://picsum.photos/seed/class-${c.product_id}/480/360`;
   const href = `/p/class?id=${c.product_id}`;
   const unavailable = c.is_enabled !== 1;
+  // Real fields, confirmed on every row from the live catalogue — just
+  // always null for this tenant right now, so this only ever shows once a
+  // class actually has one set.
+  const hasMin = c.min_age != null;
+  const hasMax = c.max_age != null;
+  const ageLabel = hasMin && hasMax
+    ? `Ages ${c.min_age}–${c.max_age}`
+    : hasMin
+      ? `Ages ${c.min_age}+`
+      : hasMax
+        ? `Up to age ${c.max_age}`
+        : null;
   return (
     <article className="cs-card" data-full={unavailable}>
       <Link href={href} className="cs-card-media">
@@ -417,7 +460,8 @@ function ClassCard({ c }) {
             if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
           }}
         />
-        {unavailable && <span className="cs-age">Unavailable</span>}
+        {ageLabel && <span className="cs-age-badge">{ageLabel}</span>}
+        {unavailable && <span className="cs-unavailable-badge">Unavailable</span>}
       </Link>
       <div className="cs-card-body">
         {c.store_name && <p className="cs-card-subj">{c.store_name}</p>}
@@ -509,6 +553,10 @@ const styles = `
 .cs-price-slider input[type="range"]:focus-visible::-webkit-slider-thumb{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 .cs-price-slider input[type="range"]:focus-visible::-moz-range-thumb{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 .cs-range-ends{ display:flex; justify-content:space-between; font-size:.72rem; color:var(--brand-ink-soft); margin-top:2px; }
+.cs-age-clear{
+  margin-top:8px; border:1px solid var(--brand-line); background:var(--brand-paper);
+  border-radius:980px; padding:5px 12px; font:inherit; font-size:.76rem; cursor:pointer; color:var(--brand-ink);
+}
 .cs-empty button{ margin-top:8px; border:1px solid var(--brand-line); background:var(--brand-paper); border-radius:980px; padding:5px 12px; font:inherit; font-size:.76rem; cursor:pointer; color:var(--brand-ink); }
 
 .cs-results-bar{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:flex-end; margin-bottom:18px; }
@@ -530,7 +578,13 @@ const styles = `
 .cs-card:hover{ box-shadow:0 20px 44px -26px color-mix(in srgb, var(--brand-ink) 55%, transparent); transform:translateY(-2px); }
 .cs-card-media{ position:relative; display:block; aspect-ratio:4/3; overflow:hidden; background:var(--brand-accent-soft); }
 .cs-card-media img{ width:100%; height:100%; object-fit:cover; display:block; }
-.cs-age{
+.cs-age-badge{
+  position:absolute; left:10px; top:10px;
+  background:var(--brand-surface); color:var(--brand-ink);
+  border:1px solid var(--brand-line); border-radius:980px;
+  font-size:.72rem; font-weight:600; padding:4px 10px;
+}
+.cs-unavailable-badge{
   position:absolute; left:10px; bottom:10px;
   background:var(--brand-surface); color:var(--brand-ink);
   border:1px solid var(--brand-line); border-radius:980px;
