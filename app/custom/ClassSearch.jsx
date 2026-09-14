@@ -146,6 +146,34 @@ function ClassSearchInner({
 
   const hasMore = rows.length < total;
 
+  // Infinite scroll: a sentinel near the end of the grid triggers the next
+  // page itself, well before the user actually reaches the bottom (a 600px
+  // rootMargin), so scrolling alone keeps the list growing — the button
+  // below is a fallback for keyboard/screen-reader use, not the main path.
+  // The observer is kept alive across fetches (a ref always points at the
+  // current loadMore) rather than torn down and recreated every time a page
+  // finishes — IntersectionObserver fires once immediately on `observe()`
+  // for whatever's already intersecting, so rebuilding it mid-scroll would
+  // re-fire on its own and could chain-load pages nobody scrolled for.
+  const sentinelRef = useRef(null);
+  const loadMoreRef = useRef(loadMore);
+  useEffect(() => {
+    loadMoreRef.current = loadMore;
+  }, [loadMore]);
+  useEffect(() => {
+    if (!hasMore || activeCount) return;
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMoreRef.current();
+      },
+      { rootMargin: "600px 0px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, activeCount]);
+
   const results = useMemo(() => {
     let list = rows.filter((r) => {
       if (q) {
@@ -284,9 +312,14 @@ function ClassSearchInner({
                 </ul>
                 {hasMore && !activeCount && (
                   <div className="cs-more">
+                    {/* Scrolling near here loads the next page automatically;
+                        this stays as a real, focusable fallback for anyone
+                        not scrolling (keyboard nav, screen readers, reduced
+                        motion) and as the visible "loading" state either way. */}
                     <button type="button" onClick={loadMore} disabled={loadingMore}>
                       {loadingMore ? "Loading…" : `Load more · ${total - rows.length} left`}
                     </button>
+                    <div ref={sentinelRef} aria-hidden="true" className="cs-sentinel" />
                   </div>
                 )}
               </>
@@ -420,10 +453,14 @@ const styles = `
 .cs-view:hover{ border-color:var(--brand-accent); color:var(--brand-accent); }
 .cs-view[data-full="true"]{ pointer-events:none; opacity:.6; }
 
-.cs-more{ display:flex; justify-content:center; margin-top:26px; }
-.cs-more button{ border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink); font:inherit; font-weight:600; font-size:.9rem; padding:11px 24px; border-radius:980px; cursor:pointer; transition:border-color var(--motion) var(--motion-ease); }
+.cs-more{ display:flex; flex-direction:column; align-items:center; gap:0; margin-top:26px; }
+.cs-more button{ border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink); font:inherit; font-weight:600; font-size:.9rem; padding:11px 24px; border-radius:980px; cursor:pointer; transition:border-color var(--motion) var(--motion-ease); order:2; }
 .cs-more button:hover{ border-color:var(--brand-accent); color:var(--brand-accent); }
 .cs-more button:disabled{ opacity:.6; cursor:default; }
+/* Sits above the button, in normal flow — the 600px rootMargin on its
+   observer means the fetch fires long before this (or the button) is ever
+   actually seen. Not something anyone should notice. */
+.cs-sentinel{ width:1px; height:1px; order:1; }
 
 .cs-skel{ border:1px solid var(--brand-line); border-radius:var(--radius-lg); background:var(--brand-surface); padding:14px; display:grid; gap:10px; }
 .cs-skel-media{ display:block; aspect-ratio:4/3; border-radius:var(--radius); background:linear-gradient(90deg, var(--brand-accent-soft) 25%, var(--brand-line) 50%, var(--brand-accent-soft) 75%); background-size:200% 100%; animation:cs-sweep 1.4s ease-in-out infinite; }
