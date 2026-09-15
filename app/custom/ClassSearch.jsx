@@ -353,11 +353,13 @@ function ClassSearchInner({
       }
       if (pmin && Number(r.price) < Number(pmin)) return false;
       if (pmax && Number(r.price) > Number(pmax)) return false;
-      if (age) {
-        // A listing with no age range set isn't excluded — every real
-        // product here has min_age/max_age null right now (confirmed live
-        // across hundreds of rows), so treating "unset" as "not for this
-        // age" would hide the entire catalogue rather than just narrow it.
+      if (age && usingRealSearch) {
+        // Age is filtered server-side for the browse feed now (see
+        // realFilterBody/fetchPage), so `rows` already reflects it and this
+        // second check is redundant there. Real marketplace search results
+        // (`searchRows`) never went through that server filter, so it's
+        // still applied here — inclusively, since a listing with no age
+        // range set shouldn't read as "excluded" just because it's blank.
         const kidAge = Number(age);
         if (r.min_age != null && kidAge < Number(r.min_age)) return false;
         if (r.max_age != null && kidAge > Number(r.max_age)) return false;
