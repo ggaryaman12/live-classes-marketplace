@@ -30,12 +30,27 @@ import { useRouter, useSearchParams } from "next/navigation";
  * fails, the keyword instead narrows whatever's already loaded below.
  *
  * WHAT'S REAL VS WHAT ISN'T IN THE FILTER RAIL:
- * Keyword, price, child's age and availability are real, so they filter for
- * real. Subject, days of the week, time of day, class format, session length
- * and language don't exist anywhere on a row this endpoint returns (checked:
- * no such fields in a real response, confirmed against several real
- * products), so those controls stay out rather than being kept as
- * decoration; the gap is logged at
+ * Price is a genuine SERVER-side filter (see priceFilterBody/fetchPage) —
+ * `filter: {min_price, max_price}` on this same endpoint, confirmed live
+ * against the real 4187-row catalogue (a 50-200 range came back as a real,
+ * stable 341, every price inside range). It rejected an incomplete version
+ * of this exact shape once before; re-verified working before wiring it in,
+ * so this isn't assumed. Because it's server-side, "Load more" and the
+ * scroll sentinel keep working with a price range set (see
+ * clientOnlyFilterActive) — a price filter genuinely fetches more real,
+ * already-narrowed rows, unlike the client-only filters below.
+ * Keyword and availability are real fields, filtered client-side over
+ * whatever's loaded (keyword also tries the real marketplace-wide search
+ * first — see above). Child's age is real too, but stays client-side and
+ * inclusive-of-unset deliberately: the same server filter object accepts
+ * min_age/max_age, but excludes null rows rather than treating "unset" as
+ * "no restriction", and every real product here has both null right now, so
+ * wiring it server-side would hide the entire catalogue the moment the
+ * slider is touched. Subject, days of the week, time of day, class format,
+ * session length and language don't exist anywhere on a row this endpoint
+ * returns (checked: no such fields in a real response, confirmed against
+ * several real products), so those controls stay out rather than being kept
+ * as decoration; the gap is logged at
  * docs/feature-requests/class-listing-filters.md.
  */
 
@@ -66,12 +81,34 @@ function parseImages(row) {
   return row.thumb_url || first || row.image_url || "";
 }
 
-async function fetchPage(start) {
+// `filter.min_price`/`max_price` is a REAL, working server-side filter on
+// this endpoint — confirmed live: {filter:{min_price:50,max_price:200}}
+// narrowed the real 4187-row total to a real, stable 341, with every
+// returned price inside the range. It genuinely wasn't accepted (a flat
+// "\"filter\" is not allowed") the first time this was tried; it works now,
+// most likely because the platform added support for it in between —
+// re-verified with repeat calls before wiring it in, so this isn't a fluke.
+// `min_age`/`max_age` are accepted in the same object too, but every real
+// product here still has both null, and this endpoint excludes null rows
+// under an age filter rather than treating "unset" as "no restriction" — so
+// wiring it server-side would make the age slider hide every class the
+// moment it's touched. That's a real regression from the current, honest
+// client-side behaviour (never hides a class that simply hasn't set an age),
+// so age filtering stays client-side until real age data exists.
+function priceFilterBody(pmin, pmax) {
+  if (!pmin && !pmax) return {};
+  const filter = {};
+  if (pmin) filter.min_price = Number(pmin);
+  if (pmax) filter.max_price = Number(pmax);
+  return { filter };
+}
+
+async function fetchPage(start, pmin, pmax) {
   try {
     const res = await fetch(`${YELO_BASE}/product/getMarketplaceProducts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...YELO_TENANT, length: PAGE_SIZE, start }),
+      body: JSON.stringify({ ...YELO_TENANT, length: PAGE_SIZE, start, ...priceFilterBody(pmin, pmax) }),
     });
     const json = await res.json();
     return {
@@ -172,6 +209,12 @@ function ClassSearchInner({
 
   const clearAll = useCallback(() => router.replace("/stores", { scroll: false }), [router]);
   const activeCount = (q ? 1 : 0) + (pmin ? 1 : 0) + (pmax ? 1 : 0) + (age ? 1 : 0) + (availableOnly ? 1 : 0);
+  // Price is filtered server-side now (see fetchPage), so paging genuinely
+  // fetches more real, already-narrowed rows even with a price range set.
+  // Keyword, age and "only available" are still applied client-side over
+  // whatever's loaded, so pagination stays paused while any of those are on
+  // — "Load more" would otherwise fetch rows that only get filtered away.
+  const clientOnlyFilterActive = !!q || !!age || availableOnly;
 
   // A minimum above the current maximum (or the reverse) would silently zero
   // out every result — nudge the other bound along instead of letting that
@@ -205,13 +248,15 @@ function ClassSearchInner({
 
   const loadFirst = useCallback(async () => {
     setState("loading");
-    const res = await fetchPage(0);
+    const res = await fetchPage(0, pmin, pmax);
     setRows(res.rows);
     setTotal(res.total);
     setStart(res.rows.length);
     setState(res.ok ? "ok" : "error");
-  }, []);
+  }, [pmin, pmax]);
 
+  // Re-runs from page 0 whenever the (server-side) price range changes —
+  // a different filter means a different total and a different first page.
   useEffect(() => {
     loadFirst();
   }, [loadFirst]);
@@ -221,14 +266,14 @@ function ClassSearchInner({
     if (loadingMore || now - lastFetchAt.current < THROTTLE_MS) return;
     lastFetchAt.current = now;
     setLoadingMore(true);
-    const res = await fetchPage(start);
+    const res = await fetchPage(start, pmin, pmax);
     if (res.ok) {
       setRows((r) => [...r, ...res.rows]);
       setStart((s) => s + res.rows.length);
       setTotal(res.total);
     }
     setLoadingMore(false);
-  }, [start, loadingMore]);
+  }, [start, loadingMore, pmin, pmax]);
 
   const hasMore = rows.length < total;
 
@@ -247,7 +292,7 @@ function ClassSearchInner({
     loadMoreRef.current = loadMore;
   }, [loadMore]);
   useEffect(() => {
-    if (!hasMore || activeCount) return;
+    if (!hasMore || clientOnlyFilterActive) return;
     const el = sentinelRef.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
@@ -258,7 +303,7 @@ function ClassSearchInner({
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasMore, activeCount]);
+  }, [hasMore, clientOnlyFilterActive]);
 
   // Real, server-side product search — fires whenever the (debounced)
   // keyword changes. If it comes back with real matches, those are what's
@@ -326,8 +371,9 @@ function ClassSearchInner({
           <h2 id="bell-cs-h">{heading}</h2>
           <p className="cs-placeholder-note">
             Real, live listings from across this marketplace — {total.toLocaleString()} right
-            now. Keyword, price, age and availability filter what's loaded
-            below; subject and schedule aren't wired yet because individual
+            now. Price is filtered across the whole marketplace, not just
+            what's loaded; keyword and availability filter what's loaded
+            below. Subject and schedule aren't wired yet because individual
             listings don't carry that information. No class here has an age
             range set yet, so the age filter won't narrow anything down until
             one does — it won't hide listings that simply haven't set one.
@@ -493,7 +539,7 @@ function ClassSearchInner({
                     </li>
                   ))}
                 </ul>
-                {hasMore && !activeCount && (
+                {hasMore && !clientOnlyFilterActive && (
                   <div className="cs-more">
                     {/* Scrolling near here loads the next page automatically;
                         this stays as a real, focusable fallback for anyone
