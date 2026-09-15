@@ -9,26 +9,34 @@ import { useRouter, useSearchParams } from "next/navigation";
  * Wired to the real, marketplace-wide catalogue: `product/getMarketplaceProducts`
  * (marketplace_user_id 510009445), confirmed live — real 200, `iTotalRecords`
  * currently 4187, real rows (product_id, name, price, store_name, user_id,
- * image_url/thumb_url/multi_image_url, is_enabled). Paginated for real, not
- * sliced client-side: `length` is the page size (kept at 50, per spec),
- * `start` the 0-based row offset — verified by paging start=0 then start=50
- * and finding zero overlapping product ids between the two real pages.
+ * image_url/thumb_url/multi_image_url, is_enabled, min_age, max_age).
+ * Paginated for real, not sliced client-side: `length` is the page size (kept
+ * at 50, per spec), `start` the 0-based row offset — verified by paging
+ * start=0 then start=50 and finding zero overlapping product ids between the
+ * two real pages. "Load more" is throttled two ways: the control disables
+ * itself for the whole in-flight request, and a minimum gap (600ms) is
+ * enforced between accepted clicks even right after it re-enables. A
+ * sentinel below the grid also triggers the next page on scroll, well before
+ * the button would ever need pressing (see the IntersectionObserver below).
  *
- * "Load more" is throttled two ways: the control disables itself for the
- * whole in-flight request, and a minimum gap (600ms) is enforced between
- * accepted clicks even right after it re-enables, so a fast-completing
- * request still can't be spammed.
+ * KEYWORD SEARCH tries the real marketplace-wide search first
+ * (`search/global/product`, the same endpoint and payload shape the real
+ * webapp's search box uses — `user_id` sent as the tenant's own
+ * marketplace_user_id, not a customer id or a guest 0, which is what silently
+ * returned nothing on the first attempt at this). If that comes back with
+ * real matches, those are shown; if it comes back empty (verified live: even
+ * an exact, real product name returns none for this tenant right now — reads
+ * as this tenant's search index not being populated, not a wrong payload) or
+ * fails, the keyword instead narrows whatever's already loaded below.
  *
  * WHAT'S REAL VS WHAT ISN'T IN THE FILTER RAIL:
- * Keyword, price and availability are real fields on every row, so they
- * filter/sort what has actually loaded so far. Subject, child's age, days of
- * the week, time of day, class format, session length, language and rating —
- * the sample version of this page had all of these — do NOT exist anywhere
- * on a row this endpoint returns (checked: no such fields in a real response,
- * confirmed against several real products). Filtering by a field that isn't
- * there would either silently do nothing or quietly return the wrong answer,
- * so those controls were removed rather than kept as decoration; the gap is
- * logged at docs/feature-requests/class-listing-filters.md.
+ * Keyword, price, child's age and availability are real, so they filter for
+ * real. Subject, days of the week, time of day, class format, session length
+ * and language don't exist anywhere on a row this endpoint returns (checked:
+ * no such fields in a real response, confirmed against several real
+ * products), so those controls stay out rather than being kept as
+ * decoration; the gap is logged at
+ * docs/feature-requests/class-listing-filters.md.
  */
 
 const YELO_BASE = "https://test-api-3025.jungleworks.com";
@@ -73,6 +81,40 @@ async function fetchPage(start) {
     };
   } catch {
     return { ok: false, rows: [], total: 0 };
+  }
+}
+
+// Real, marketplace-wide product search (Elasticsearch) — the same endpoint
+// and payload shape the real webapp's search box uses (search-all.component.ts
+// searchTextHit/getSearchedProductData): `user_id` is set to the tenant's own
+// marketplace_user_id, not a customer id or 0 — sending a guest "0" there is
+// what silently returned nothing the first time this was tried. Verified
+// live with the corrected shape: real 200, real envelope
+// (`data.search_text`/`data.result`) — for this tenant specifically it comes
+// back empty even for an exact, real product name ("prawn"), which reads as
+// this tenant's product search index not being populated rather than a
+// wrong payload, so a genuinely-empty result here still falls back to
+// filtering what's already loaded (see the results memo below).
+async function fetchProductSearch(term) {
+  try {
+    const res = await fetch(`${YELO_BASE}/search/global/product`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", base_version: "1.0.0", device_type: "WEB" },
+      body: JSON.stringify({
+        ...YELO_TENANT,
+        search_text: term,
+        user_id: YELO_TENANT.marketplace_user_id,
+        latitude: 28.61482,
+        longitude: 77.219989,
+        date_time: new Date().toISOString(),
+        self_pickup: 0,
+      }),
+    });
+    const json = await res.json();
+    const result = json?.data?.result;
+    return { ok: json?.status === 200, rows: Array.isArray(result) ? result : [] };
+  } catch {
+    return { ok: false, rows: [] };
   }
 }
 
@@ -218,9 +260,43 @@ function ClassSearchInner({
     return () => observer.disconnect();
   }, [hasMore, activeCount]);
 
+  // Real, server-side product search — fires whenever the (debounced)
+  // keyword changes. If it comes back with real matches, those are what's
+  // shown; if it comes back empty (or fails), that's not treated as "no
+  // matches exist" — it falls back to searching only what's already loaded,
+  // same as before this was wired. See fetchProductSearch's own note on why
+  // an empty real 200 here isn't necessarily "nothing matches".
+  const [searchState, setSearchState] = useState("idle"); // idle | loading | ok | fallback
+  const [searchRows, setSearchRows] = useState([]);
+  useEffect(() => {
+    if (!q) {
+      setSearchState("idle");
+      setSearchRows([]);
+      return;
+    }
+    let cancelled = false;
+    setSearchState("loading");
+    fetchProductSearch(q).then((res) => {
+      if (cancelled) return;
+      if (res.ok && res.rows.length) {
+        setSearchRows(res.rows);
+        setSearchState("ok");
+      } else {
+        setSearchRows([]);
+        setSearchState("fallback");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [q]);
+
+  const usingRealSearch = !!q && searchState === "ok";
+
   const results = useMemo(() => {
-    let list = rows.filter((r) => {
-      if (q) {
+    const source = usingRealSearch ? searchRows : rows;
+    let list = source.filter((r) => {
+      if (q && !usingRealSearch) {
         const haystack = `${r.name} ${r.store_name || ""}`.toLowerCase();
         if (!q.split(/\s+/).every((word) => haystack.includes(word))) return false;
       }
@@ -241,7 +317,7 @@ function ClassSearchInner({
     if (sort === "price-asc") list = [...list].sort((a, b) => Number(a.price) - Number(b.price));
     else if (sort === "price-desc") list = [...list].sort((a, b) => Number(b.price) - Number(a.price));
     return list;
-  }, [rows, q, pmin, pmax, age, availableOnly, sort]);
+  }, [rows, searchRows, usingRealSearch, q, pmin, pmax, age, availableOnly, sort]);
 
   return (
     <section className="bell-cs" aria-labelledby="bell-cs-h">
@@ -281,6 +357,15 @@ function ClassSearchInner({
                 placeholder="Class or teacher name…"
                 onChange={(e) => onKeywordChange(e.target.value)}
               />
+              {q && (
+                <p className="cs-search-note" aria-live="polite">
+                  {searchState === "loading"
+                    ? "Searching the marketplace…"
+                    : searchState === "ok"
+                      ? `${searchRows.length} real match${searchRows.length === 1 ? "" : "es"} across the marketplace`
+                      : "No marketplace match yet — searching what's loaded below"}
+                </p>
+              )}
             </fieldset>
 
             <fieldset>
@@ -513,6 +598,7 @@ const styles = `
   border:1px solid var(--brand-line); border-radius:var(--radius);
   background:var(--brand-paper); color:var(--brand-ink);
 }
+.cs-search-note{ margin:8px 0 0; font-size:.76rem; color:var(--brand-ink-soft); font-style:italic; }
 .cs-check{ display:flex; gap:9px; align-items:flex-start; padding:5px 0; font-size:.84rem; cursor:pointer; }
 .cs-check input{ margin-top:2px; accent-color:var(--brand-accent); width:15px; height:15px; }
 .cs-switch{ font-weight:500; }
