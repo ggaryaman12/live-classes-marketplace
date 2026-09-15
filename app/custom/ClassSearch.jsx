@@ -88,27 +88,32 @@ function parseImages(row) {
 // "\"filter\" is not allowed") the first time this was tried; it works now,
 // most likely because the platform added support for it in between —
 // re-verified with repeat calls before wiring it in, so this isn't a fluke.
-// `min_age`/`max_age` are accepted in the same object too, but every real
-// product here still has both null, and this endpoint excludes null rows
-// under an age filter rather than treating "unset" as "no restriction" — so
-// wiring it server-side would make the age slider hide every class the
-// moment it's touched. That's a real regression from the current, honest
-// client-side behaviour (never hides a class that simply hasn't set an age),
-// so age filtering stays client-side until real age data exists.
-function priceFilterBody(pmin, pmax) {
-  if (!pmin && !pmax) return {};
+// `min_age`/`max_age` are accepted in the same object too — now wired
+// server-side as well, sending the single "child's age" value as both
+// bounds (the natural reading of one slider onto a min/max pair: "does
+// this class's age range cover this age"). Every real product here still
+// has both fields null, and this endpoint excludes null rows once an age
+// filter is present (confirmed live), so the honest result today is that
+// picking an age returns zero classes — that's the real backend answer,
+// not a bug, and it'll start returning real matches the moment any class
+// actually gets an age range set.
+function realFilterBody(pmin, pmax, age) {
   const filter = {};
   if (pmin) filter.min_price = Number(pmin);
   if (pmax) filter.max_price = Number(pmax);
-  return { filter };
+  if (age) {
+    filter.min_age = Number(age);
+    filter.max_age = Number(age);
+  }
+  return Object.keys(filter).length ? { filter } : {};
 }
 
-async function fetchPage(start, pmin, pmax) {
+async function fetchPage(start, pmin, pmax, age) {
   try {
     const res = await fetch(`${YELO_BASE}/product/getMarketplaceProducts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...YELO_TENANT, length: PAGE_SIZE, start, ...priceFilterBody(pmin, pmax) }),
+      body: JSON.stringify({ ...YELO_TENANT, length: PAGE_SIZE, start, ...realFilterBody(pmin, pmax, age) }),
     });
     const json = await res.json();
     return {
@@ -209,12 +214,12 @@ function ClassSearchInner({
 
   const clearAll = useCallback(() => router.replace("/stores", { scroll: false }), [router]);
   const activeCount = (q ? 1 : 0) + (pmin ? 1 : 0) + (pmax ? 1 : 0) + (age ? 1 : 0) + (availableOnly ? 1 : 0);
-  // Price is filtered server-side now (see fetchPage), so paging genuinely
-  // fetches more real, already-narrowed rows even with a price range set.
-  // Keyword, age and "only available" are still applied client-side over
-  // whatever's loaded, so pagination stays paused while any of those are on
-  // — "Load more" would otherwise fetch rows that only get filtered away.
-  const clientOnlyFilterActive = !!q || !!age || availableOnly;
+  // Price AND age are filtered server-side now (see fetchPage), so paging
+  // genuinely fetches more real, already-narrowed rows with either set.
+  // Keyword and "only available" are still applied client-side over
+  // whatever's loaded, so pagination stays paused while either is on —
+  // "Load more" would otherwise fetch rows that only get filtered away.
+  const clientOnlyFilterActive = !!q || availableOnly;
 
   // A minimum above the current maximum (or the reverse) would silently zero
   // out every result — nudge the other bound along instead of letting that
@@ -248,15 +253,16 @@ function ClassSearchInner({
 
   const loadFirst = useCallback(async () => {
     setState("loading");
-    const res = await fetchPage(0, pmin, pmax);
+    const res = await fetchPage(0, pmin, pmax, age);
     setRows(res.rows);
     setTotal(res.total);
     setStart(res.rows.length);
     setState(res.ok ? "ok" : "error");
-  }, [pmin, pmax]);
+  }, [pmin, pmax, age]);
 
-  // Re-runs from page 0 whenever the (server-side) price range changes —
-  // a different filter means a different total and a different first page.
+  // Re-runs from page 0 whenever the (server-side) price or age filter
+  // changes — a different filter means a different total and a different
+  // first page.
   useEffect(() => {
     loadFirst();
   }, [loadFirst]);
@@ -266,14 +272,14 @@ function ClassSearchInner({
     if (loadingMore || now - lastFetchAt.current < THROTTLE_MS) return;
     lastFetchAt.current = now;
     setLoadingMore(true);
-    const res = await fetchPage(start, pmin, pmax);
+    const res = await fetchPage(start, pmin, pmax, age);
     if (res.ok) {
       setRows((r) => [...r, ...res.rows]);
       setStart((s) => s + res.rows.length);
       setTotal(res.total);
     }
     setLoadingMore(false);
-  }, [start, loadingMore, pmin, pmax]);
+  }, [start, loadingMore, pmin, pmax, age]);
 
   const hasMore = rows.length < total;
 
@@ -496,7 +502,13 @@ function ClassSearchInner({
               </div>
             </div>
 
-            {state === "loading" && rows.length === 0 && (
+            {state === "loading" && (
+              // Shows for the very first load AND for every refetch a price
+              // or age change triggers (loadFirst resets to `state:
+              // "loading"` each time) — without this covering the refetch
+              // case too, changing the price range left the OLD grid sitting
+              // on screen with no sign anything was happening until the new
+              // page suddenly swapped in.
               <ul className="cs-grid" aria-hidden="true">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <li key={i} className="cs-skel">
@@ -656,34 +668,53 @@ const styles = `
    keyboard and screen-reader behaviour stay intact), tracks made invisible
    so only the thumbs show, with a plain div underneath drawing the track
    and the coloured fill between the two current values. */
-.cs-price-slider{ position:relative; height:28px; display:flex; align-items:center; }
+/* Every layer here — the track, the fill, and both native inputs — is
+   position:absolute, which takes it clean out of the parent's flex flow.
+   align-items:center on the parent does nothing for any of them: without
+   an explicit top + transform:translateY(-50%) each layer falls back to
+   browser-dependent auto-positioning, which is what made the whole control
+   look uncentered/squashed. Anchoring all four to the same vertical centre
+   is the actual fix, not a cosmetic tweak. */
+.cs-price-slider{ position:relative; height:32px; margin-top:6px; }
 .cs-price-track{
-  position:absolute; left:0; right:0; height:4px; border-radius:4px;
+  position:absolute; top:50%; left:2px; right:2px; height:4px;
+  border-radius:4px; transform:translateY(-50%);
   background:var(--brand-line);
 }
 .cs-price-fill{
-  position:absolute; height:4px; border-radius:4px; background:var(--brand-accent);
+  position:absolute; top:50%; height:4px; border-radius:4px;
+  transform:translateY(-50%);
+  background:var(--brand-accent);
 }
 .cs-price-slider input[type="range"]{
-  position:absolute; left:0; right:0; width:100%; margin:0;
+  position:absolute; top:50%; left:0; right:0; width:100%; height:16px;
+  margin:0; transform:translateY(-50%);
   background:transparent; pointer-events:none;
   -webkit-appearance:none; appearance:none;
 }
-.cs-price-slider input[type="range"]::-webkit-slider-runnable-track{ background:transparent; }
-.cs-price-slider input[type="range"]::-moz-range-track{ background:transparent; border:0; }
+.cs-price-slider input[type="range"]::-webkit-slider-runnable-track{ background:transparent; height:16px; }
+.cs-price-slider input[type="range"]::-moz-range-track{ background:transparent; border:0; height:16px; }
 .cs-price-slider input[type="range"]::-webkit-slider-thumb{
   -webkit-appearance:none; pointer-events:auto; cursor:pointer;
-  width:16px; height:16px; margin-top:-6px; border-radius:50%;
+  width:18px; height:18px; margin-top:-1px; border-radius:50%;
   background:var(--brand-accent); border:2px solid var(--brand-surface);
-  box-shadow:0 1px 3px color-mix(in srgb, var(--brand-ink) 35%, transparent);
+  box-shadow:0 1px 4px color-mix(in srgb, var(--brand-ink) 40%, transparent);
+  transition:transform var(--motion) var(--motion-ease);
 }
 .cs-price-slider input[type="range"]::-moz-range-thumb{
-  pointer-events:auto; cursor:pointer; width:16px; height:16px; border-radius:50%;
+  pointer-events:auto; cursor:pointer; width:18px; height:18px; border-radius:50%;
   background:var(--brand-accent); border:2px solid var(--brand-surface);
-  box-shadow:0 1px 3px color-mix(in srgb, var(--brand-ink) 35%, transparent);
+  box-shadow:0 1px 4px color-mix(in srgb, var(--brand-ink) 40%, transparent);
+  transition:transform var(--motion) var(--motion-ease);
 }
+.cs-price-slider input[type="range"]:hover::-webkit-slider-thumb{ transform:scale(1.12); }
+.cs-price-slider input[type="range"]:hover::-moz-range-thumb{ transform:scale(1.12); }
 .cs-price-slider input[type="range"]:focus-visible::-webkit-slider-thumb{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 .cs-price-slider input[type="range"]:focus-visible::-moz-range-thumb{ outline:3px solid var(--brand-accent); outline-offset:2px; }
+@media (prefers-reduced-motion: reduce){
+  .cs-price-slider input[type="range"]::-webkit-slider-thumb{ transition:none; }
+  .cs-price-slider input[type="range"]::-moz-range-thumb{ transition:none; }
+}
 .cs-range-ends{ display:flex; justify-content:space-between; font-size:.72rem; color:var(--brand-ink-soft); margin-top:2px; }
 .cs-age-clear{
   margin-top:8px; border:1px solid var(--brand-line); background:var(--brand-paper);
