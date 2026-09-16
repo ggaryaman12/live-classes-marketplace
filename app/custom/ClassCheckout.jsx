@@ -55,6 +55,39 @@
  * backend — the same already-verified-working pattern SubscribeScheduler.jsx
  * uses for getRecurringSlots/get_bill_breakdown; this backend allows it from
  * the browser, no proxy needed.
+ *
+ * RAZORPAY — traced end to end from the real client
+ * (yelo-marketplace-webapp/src/app/components/payment/payment.component.ts):
+ *  1. `payment/getPaymentUrl` (Joi contract at yelo-server
+ *     modules/payment/validators/paymentValidator.js:74) with
+ *     payment_method: 128 (PaymentMode.RAZORPAY — enums/enum.ts:80) and
+ *     payment_for: 0 (CREATE_TASK — yelo-server properties/constants.js
+ *     PAYMENT_FOR). Live-tested against this tenant with a throwaway
+ *     vendor_id: got back a real `status:101 "Session expired"` (an auth
+ *     failure, not a validation one) — confirms this exact payload shape is
+ *     accepted, it just needs a real signed-in session to go further, which
+ *     is why this option is disabled for guests below.
+ *  2. Response `data.url` is the real hosted Razorpay checkout page. The
+ *     client opens it in an iframe with `&domain_name=` + the storefront's
+ *     own origin appended (payment.component.ts:1720-1722) so that page
+ *     knows where to postMessage back to.
+ *  3. On success the iframe posts `window.postMessage({payment_method:128,
+ *     rzp_payment_id, ...})` with no `.action`; `{action:'close'}` means the
+ *     parent closed it before paying (payment.component.ts:1023-1078).
+ *  4. Real client then calls `taskViaPayment()` — i.e. the SAME order-create
+ *     call a cash order uses (successPayfortTransaction():10820-10832) —
+ *     just with paymentType 128 instead of CASH. This build does the exact
+ *     same thing: the postMessage handler below calls the same /api/order or
+ *     recurring/saveRecurringTask this file already uses for cash, with
+ *     `paymentType: RAZORPAY`.
+ *
+ * ONE GAP, STATED PLAINLY: yelo-server records the gateway's own transaction
+ * id via a `transaction_id` field on the order (customer_open_apis.js:6444),
+ * but that field isn't in this shared app's `buildOrderBody()` (lib/order.js,
+ * outside this workspace — read-only from here), so the order records
+ * "paid via Razorpay" (payment_method 128) but not the specific payment id.
+ * Reconciling a specific payment against a specific order needs that field
+ * added to the shared order contract, not something fixable from this file.
  */
 import { Suspense, useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
@@ -84,6 +117,14 @@ const YELO_TENANT = {
   language: 'en',
 };
 const RECURRING_PAYMENT_METHODS = [PAYMENT.CASH, PAYMENT.WALLET, PAYMENT.PAYLATER];
+// Not in the shared PAYMENT map because it isn't a per-tenant value — it's the
+// fixed marketplace-wide Razorpay code, verified in both real repos:
+// yelo-marketplace-webapp/src/app/enums/enum.ts:80 (PaymentMode.RAZORPAY =
+// 128) and yelo-server/properties/constants.js merchantPaymentMethodsMasks.
+// Deliberately NOT added to RECURRING_PAYMENT_METHODS: the real client never
+// routes an online gateway through createRecurrenceTask directly (see the
+// file header) — it always goes through the payment iframe first.
+const RAZORPAY = 128;
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function fmtClock(hhmm) {
@@ -129,6 +170,7 @@ function ClassCheckoutInner({
   ctaLabel = 'Confirm & enroll',
   allowCash = true,
   allowWallet = false,
+  allowRazorpay = true,
 }) {
   const cart = useCart();
   const router = useRouter();
@@ -146,6 +188,8 @@ function ClassCheckoutInner({
   const [error, setError] = useState('');
   const [badFields, setBadFields] = useState([]);
   const [currencyId, setCurrencyId] = useState(undefined);
+  const [razorpayUrl, setRazorpayUrl] = useState('');
+  const [razorpayStarting, setRazorpayStarting] = useState(false);
 
   // Same recap params RecurringSummary.jsx reads off the URL, set by
   // SubscribeScheduler.jsx's proceed() when the parent chose "Subscribe".
@@ -301,6 +345,11 @@ function ClassCheckoutInner({
   const total = isSubscription && recurringBill ? recurringBill.total : (bill?.total ?? cart.subtotal);
   const walletShort = wallet.enabled && wallet.balance < total;
   const currency = bill?.currency || '₹';
+  // payment/getPaymentUrl's Joi schema requires vendor_id for a normal
+  // (non subscription-plan) payment — there's no guest path for paying
+  // online, unlike cash. Verified live: a call with no real session comes
+  // back `status:101 "Session expired"` rather than succeeding.
+  const canRazorpay = !!(session?.vendorId && session?.token);
 
   useEffect(() => {
     if (pay === PAYMENT.WALLET && (walletShort || !wallet.enabled) && allowCash) {
@@ -308,10 +357,146 @@ function ClassCheckoutInner({
     }
   }, [walletShort, wallet.enabled, pay, allowCash]);
 
+  useEffect(() => {
+    if (pay === RAZORPAY && !canRazorpay && allowCash) {
+      setPay(PAYMENT.CASH);
+    }
+  }, [canRazorpay, pay, allowCash]);
+
   const money = useMemo(
     () => (n) => `${currency}${Number(n || 0).toFixed(2).replace(/\.00$/, '')}`,
     [currency],
   );
+
+  // Real client waits ~3s after the iframe's postMessage before treating a
+  // Razorpay payment as final (payment.component.ts successRazorpayTransaction)
+  // — long enough for Razorpay's own on-screen success state to be visible
+  // before the iframe vanishes, so it doesn't look like the tap did nothing.
+  async function completeAfterRazorpay() {
+    const merged = { ...(session || {}), ...contact };
+    setPlacing(true);
+
+    if (isSubscription) {
+      const requestBody = buildOrderBody({
+        storeId: cart.storeId,
+        items: cart.items,
+        address: ONLINE_PLACEHOLDER,
+        session: merged,
+        paymentType: RAZORPAY,
+        bill,
+        deliveryType: 2,
+        config: { currencyId },
+        envelope: YELO_TENANT,
+      });
+      const r = await yeloPost('recurring/saveRecurringTask', {
+        ...YELO_TENANT,
+        user_id: cart.storeId,
+        vendor_id: merged.vendorId,
+        access_token: merged.token,
+        day_array: dayArray,
+        schedule_time: scheduleTime,
+        start_schedule: startSchedule,
+        occurrence_count: recurringOccurrences,
+        ...(cycleType ? { cycle_type: cycleType } : {}),
+        request_body: JSON.stringify({ ...requestBody, google_meet: 1 }),
+      });
+      setPlacing(false);
+      if (r?.status === 200) {
+        setPlaced({
+          orderId: r.data?.rule_id || null,
+          storeId: cart.storeId,
+          storeName: cart.storeName,
+          vendorId: merged.vendorId,
+          accessToken: merged.token,
+          items: cart.items.map((it) => ({ ...it })),
+          bill,
+          isSubscription: true,
+        });
+        cart.clear();
+        return;
+      }
+      setError(r?.message || 'Payment went through, but the subscription could not be created — contact support with your Razorpay receipt, nothing will be charged twice.');
+      return;
+    }
+
+    const r = await post('/api/order', {
+      storeId: cart.storeId,
+      items: cart.items,
+      address: ONLINE_PLACEHOLDER,
+      session: merged,
+      paymentType: RAZORPAY,
+      bill,
+      deliveryType: 2,
+    });
+    setPlacing(false);
+    if (r.ok) {
+      setPlaced({ ...r, storeName: cart.storeName, items: cart.items.map((it) => ({ ...it })), bill });
+      cart.clear();
+      return;
+    }
+    setError(r.message || 'Payment went through, but the booking could not be recorded — contact support with your Razorpay receipt, nothing will be charged twice.');
+  }
+
+  // window.onmessage, exactly like the real client's iframe listener
+  // (payment.component.ts:928-1078): the hosted Razorpay page posts back to
+  // whichever window opened it, there's no other channel.
+  useEffect(() => {
+    function onMessage(event) {
+      const d = event.data;
+      if (!d || typeof d !== 'object') return;
+      if (d.payment_method !== 128 && d.payment_method !== 5025) return;
+      if (d.action === 'close') {
+        setRazorpayUrl('');
+        setError('Payment window closed — nothing was charged.');
+        return;
+      }
+      setTimeout(() => {
+        setRazorpayUrl('');
+        completeAfterRazorpay();
+      }, 1500);
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, contact, cart.items, cart.storeId, cart.storeName, isSubscription, dayArray, scheduleTime, startSchedule, recurringOccurrences, cycleType, bill, currencyId]);
+
+  async function startRazorpayPayment() {
+    if (!session?.vendorId || !session?.token) {
+      return setError('Sign in to pay online — Razorpay needs a real account.');
+    }
+    const merged = { ...(session || {}), ...contact };
+    if (typeof window !== 'undefined') saveSession(merged);
+
+    setRazorpayStarting(true);
+    const r = await yeloPost('payment/getPaymentUrl', {
+      ...YELO_TENANT,
+      amount: total,
+      app_type: 'WEB',
+      payment_for: 0, // CREATE_TASK — yelo-server properties/constants.js PAYMENT_FOR
+      // marketplace_fetch_app_configuration (which would normally supply the
+      // real currency CODE, payment.component.ts:1634) returns a genuine SQL
+      // error for this tenant right now — verified live: status 201,
+      // ER_PARSE_ERROR. Every price on this storefront is already ₹, so INR
+      // is the honest fallback, not an invented value.
+      currency: 'INR',
+      name: merged.name || 'Parent',
+      email: merged.email || 'contact@yelo.red', // the backend's own default for a blank email (paymentValidator.js:79-81) — matched, not invented
+      vendor_id: merged.vendorId,
+      access_token: merged.token,
+      app_access_token: merged.token,
+      user_id: cart.storeId,
+      payment_method: RAZORPAY,
+    });
+    setRazorpayStarting(false);
+
+    if (r?.status === 200 && r?.data?.url) {
+      // The real client appends its own origin so the hosted page knows
+      // where to postMessage the result back to (payment.component.ts:1720-1722).
+      setRazorpayUrl(`${r.data.url}&domain_name=${encodeURIComponent(window.location.origin)}`);
+    } else {
+      setError(r?.message || 'Could not start Razorpay — please try another payment method.');
+    }
+  }
 
   async function place() {
     setError('');
@@ -323,6 +508,12 @@ function ClassCheckoutInner({
     }
     if (pay === PAYMENT.WALLET && wallet.balance < total) {
       return setError('Wallet balance is short of the total. Choose another payment method.');
+    }
+    if (isSubscription && (!dayArray.length || !scheduleTime)) {
+      return setError('Pick a day and time on the class page before subscribing.');
+    }
+    if (pay === RAZORPAY) {
+      return startRazorpayPayment();
     }
 
     const merged = { ...(session || {}), ...contact };
@@ -453,7 +644,7 @@ function ClassCheckoutInner({
           items={placed.items}
           bill={placed.bill}
           currency={currency}
-          payLabel={pay === PAYMENT.CASH ? 'Pay at the session' : 'Paid'}
+          payLabel={pay === PAYMENT.CASH ? 'Pay at the session' : pay === RAZORPAY ? 'Paid online via Razorpay' : 'Paid'}
           session={session}
         />
         <button className="ck-place ck-done-btn" onClick={() => router.push('/stores')}>Back to teachers</button>
@@ -519,6 +710,17 @@ function ClassCheckoutInner({
                   onChange={() => setPay(PAYMENT.CASH)} />
                 <span className="ck-pay-i" aria-hidden="true">💵</span>
                 <span className="ck-pay-b"><b>Pay at the session</b><small>Settle with the teacher directly</small></span>
+              </label>
+            )}
+            {allowRazorpay && (
+              <label className={`ck-pay ${pay === RAZORPAY ? 'on' : ''} ${!canRazorpay ? 'off' : ''}`}>
+                <input type="radio" name="pay" disabled={!canRazorpay}
+                  checked={pay === RAZORPAY} onChange={() => setPay(RAZORPAY)} />
+                <span className="ck-pay-i" aria-hidden="true">💳</span>
+                <span className="ck-pay-b">
+                  <b>Pay online</b>
+                  <small>{canRazorpay ? 'Card, UPI or netbanking — secured by Razorpay' : 'Sign in to pay online with Razorpay'}</small>
+                </span>
               </label>
             )}
             {allowWallet && (
@@ -627,18 +829,36 @@ function ClassCheckoutInner({
 
             <button
               className="ck-place"
-              data-busy={placing ? '1' : undefined}
-              disabled={placing || billing || !bill || billFailed || (isSubscription && recurringBillState === 'loading')}
+              data-busy={placing || razorpayStarting ? '1' : undefined}
+              disabled={placing || billing || !bill || billFailed || razorpayStarting || (isSubscription && recurringBillState === 'loading')}
               onClick={place}
             >
-              {placing ? (usesRecurringApi ? 'Subscribing…' : 'Enrolling…')
+              {razorpayStarting ? 'Opening Razorpay…'
+                : placing ? (pay === RAZORPAY ? 'Confirming payment…' : usesRecurringApi ? 'Subscribing…' : 'Enrolling…')
                 : billing || (isSubscription && recurringBillState === 'loading') ? 'Updating total…'
+                : pay === RAZORPAY ? `${ctaLabel} with Razorpay · ${money(total)}`
                 : `${ctaLabel} · ${money(total)}`}
             </button>
             <div className="ck-secure">🔒 {session ? `Signed in as ${session.name || 'you'}` : 'Guest checkout'}</div>
           </section>
         </div>
       </div>
+
+      {razorpayUrl && (
+        <div className="ck-rzp-overlay" role="dialog" aria-modal="true" aria-label="Pay with Razorpay">
+          <div className="ck-rzp-modal">
+            <button
+              type="button"
+              className="ck-rzp-close"
+              aria-label="Close payment window"
+              onClick={() => { setRazorpayUrl(''); setError('Payment window closed — nothing was charged.'); }}
+            >
+              ×
+            </button>
+            <iframe src={razorpayUrl} title="Razorpay payment" className="ck-rzp-frame" />
+          </div>
+        </div>
+      )}
       <style>{css}</style>
     </div>
   );
@@ -678,4 +898,26 @@ const css = `
   color:var(--muted, var(--brand-ink-soft));
 }
 .ck-sched dd{ margin:0; font-size:13px; font-weight:600; text-align:right; }
+
+.ck-rzp-overlay{
+  position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center;
+  padding:16px; background:color-mix(in srgb, var(--brand-ink) 55%, transparent);
+}
+.ck-rzp-modal{
+  position:relative; width:100%; max-width:460px; height:min(640px, 92vh);
+  background:var(--brand-surface); border-radius:var(--radius-lg); overflow:hidden;
+  box-shadow:0 30px 60px -20px color-mix(in srgb, var(--brand-ink) 45%, transparent);
+}
+.ck-rzp-frame{ width:100%; height:100%; border:0; display:block; }
+.ck-rzp-close{
+  position:absolute; top:8px; right:8px; z-index:1; width:32px; height:32px; border-radius:50%;
+  border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink);
+  font-size:20px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;
+}
+.ck-rzp-close:hover{ border-color:var(--brand-accent); color:var(--brand-accent); }
+.ck-rzp-close:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
+@media (max-width:480px){
+  .ck-rzp-overlay{ padding:0; }
+  .ck-rzp-modal{ max-width:100%; height:100%; border-radius:0; }
+}
 `;
