@@ -286,19 +286,45 @@ function ClassCheckoutInner({
     setSessionReady(true);
   }, []);
 
-  // currency_id isn't in the recurring endpoint's own required fields, but it
-  // rides inside `request_body` the same way it does on a one-time order — the
-  // normal /api/order route gets it server-side from getAppConfig(); this
-  // direct-to-backend path fetches it itself the same way SubscribeScheduler
-  // and other components already call the tenant config endpoint.
+  // currency_id doesn't appear in recurring/saveRecurringTask's OWN required
+  // fields, but the real handler reads it straight off the parsed
+  // `request_body` blob and stores it on the saved rule row
+  // (yelo-server recurringController.js:1353 reads it, :1442 saves it as
+  // `currentRule.currency_id`) — a missing key here isn't cosmetic, it's a
+  // real column on a real INSERT. `marketplace_fetch_app_configuration`
+  // (what the normal /api/order route uses server-side via getAppConfig())
+  // is answering with a genuine SQL error for this tenant right now —
+  // verified live, repeatedly: `status:201, {"code":"ER_PARSE_ERROR",...}`,
+  // not something this file can fix (it's inside yelo-server). Rather than
+  // silently let that failure make `currency_id` vanish from the JSON
+  // (JSON.stringify drops an `undefined` value entirely — this is the exact
+  // bug reported), this also tries the store-level endpoint that already
+  // works elsewhere in this build (StoreHeader's real `bind.source:"store"`)
+  // and does carry its own `currency_id` column.
   useEffect(() => {
     if (!isSubscription) return;
     let cancelled = false;
-    yeloPost('marketplace_fetch_app_configuration', YELO_TENANT).then((j) => {
-      if (!cancelled && j?.status === 200 && j?.data?.currency_id) setCurrencyId(j.data.currency_id);
-    });
+    async function loadCurrencyId() {
+      const config = await yeloPost('marketplace_fetch_app_configuration', YELO_TENANT);
+      if (cancelled) return;
+      if (config?.status === 200 && config?.data?.currency_id != null) {
+        setCurrencyId(config.data.currency_id);
+        return;
+      }
+      if (!cart.storeId) return;
+      const store = await yeloPost('marketplace_get_city_storefronts_single_v2', {
+        ...YELO_TENANT,
+        user_id: cart.storeId,
+        latitude: ONLINE_PLACEHOLDER.lat,
+        longitude: ONLINE_PLACEHOLDER.lng,
+      });
+      if (!cancelled && store?.status === 200 && store?.data?.currency_id != null) {
+        setCurrencyId(store.data.currency_id);
+      }
+    }
+    loadCurrencyId();
     return () => { cancelled = true; };
-  }, [isSubscription]);
+  }, [isSubscription, cart.storeId]);
 
   // THE CART'S qty × price IS THE WRONG NUMBER FOR A SUBSCRIPTION.
   //
@@ -352,6 +378,12 @@ function ClassCheckoutInner({
           total: b.TOTAL_RECURRING_AMOUNT ?? b.NET_PAYABLE_AMOUNT ?? null,
         });
         setRecurringBillState('real');
+        // The best real source for this store's currency_id: it's the SAME
+        // call already proving out the bill, for the SAME store, so it can't
+        // disagree with what's actually being charged. `CURRENCY` can be `{}`
+        // (a known real shape, see customer_open_apis.js:2835) — only take it
+        // when it's actually populated.
+        if (b.CURRENCY?.currency_id != null) setCurrencyId(b.CURRENCY.currency_id);
       } else {
         setRecurringBill(null);
         setRecurringBillState('estimate');
