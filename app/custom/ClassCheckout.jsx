@@ -472,7 +472,17 @@ function ClassCheckoutInner({
         paymentType: RAZORPAY,
         bill,
         deliveryType: 2,
-        config: { currencyId },
+        // `currencyId` can still be null/undefined if every real source came
+        // back empty for this tenant (no multi-currency config) — `0` isn't a
+        // guess: it's the exact value yelo-server's OWN handler sends for a
+        // non-multi-currency tenant (customer_open_apis.js:1765 —
+        // `req.adminConfig.is_multi_currency_enabled ? currencyObj.currency_id
+        // : 0`), so it's what a real order looks like here anyway. `??`, not
+        // `||`, so a real `0` currency id is never mistaken for "unset" and
+        // overwritten by the same 0 — the point is only to stop `undefined`
+        // from ever reaching this key, which is what was making it vanish
+        // from request_body entirely (JSON.stringify drops undefined values).
+        config: { currencyId: currencyId ?? 0 },
         envelope: YELO_TENANT,
       });
       const r = await yeloPost('recurring/saveRecurringTask', {
@@ -700,7 +710,17 @@ function ClassCheckoutInner({
         paymentType: pay,
         bill,
         deliveryType: 2,
-        config: { currencyId },
+        // `currencyId` can still be null/undefined if every real source came
+        // back empty for this tenant (no multi-currency config) — `0` isn't a
+        // guess: it's the exact value yelo-server's OWN handler sends for a
+        // non-multi-currency tenant (customer_open_apis.js:1765 —
+        // `req.adminConfig.is_multi_currency_enabled ? currencyObj.currency_id
+        // : 0`), so it's what a real order looks like here anyway. `??`, not
+        // `||`, so a real `0` currency id is never mistaken for "unset" and
+        // overwritten by the same 0 — the point is only to stop `undefined`
+        // from ever reaching this key, which is what was making it vanish
+        // from request_body entirely (JSON.stringify drops undefined values).
+        config: { currencyId: currencyId ?? 0 },
         envelope: YELO_TENANT,
       });
       const r = await yeloPost('recurring/saveRecurringTask', {
