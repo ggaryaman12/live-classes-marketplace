@@ -56,40 +56,61 @@
  * uses for getRecurringSlots/get_bill_breakdown; this backend allows it from
  * the browser, no proxy needed.
  *
- * RAZORPAY — traced end to end from the real client
- * (yelo-marketplace-webapp/src/app/components/payment/payment.component.ts):
+ * RAZORPAY — an IFRAME DOES NOT WORK HERE, confirmed live (real console
+ * errors, this tenant): the hosted payment page answers with
+ * `X-Frame-Options: sameorigin`, so the browser refuses to frame it from this
+ * storefront's origin — full stop, not something fixable with a header or a
+ * retry from our side. `X-Frame-Options: sameorigin` means "only a document
+ * on MY OWN origin may frame me"; the real webapp can iframe this exact page
+ * because it's deployed on that same origin, this separate Next.js storefront
+ * never is. So this opens the payment page as a POPUP (`window.open`)
+ * instead — confirmed against the actual static pages this backend serves:
  *  1. `payment/getPaymentUrl` (Joi contract at yelo-server
  *     modules/payment/validators/paymentValidator.js:74) with
  *     payment_method: 128 (PaymentMode.RAZORPAY — enums/enum.ts:80) and
  *     payment_for: 0 (CREATE_TASK — yelo-server properties/constants.js
- *     PAYMENT_FOR). Live-tested against this tenant with a throwaway
- *     vendor_id: got back a real `status:101 "Session expired"` (an auth
- *     failure, not a validation one) — confirms this exact payload shape is
- *     accepted, it just needs a real signed-in session to go further, which
- *     is why this option is disabled for guests below.
- *  2. Response `data.url` is the real hosted Razorpay checkout page. The
- *     client opens it in an iframe with `&domain_name=` + the storefront's
- *     own origin appended (payment.component.ts:1720-1722) so that page
- *     knows where to postMessage back to.
- *  3. On success the iframe posts `window.postMessage({payment_method:128,
- *     rzp_payment_id, ...})` with no `.action`; `{action:'close'}` means the
- *     parent closed it before paying (payment.component.ts:1023-1078).
- *  4. Real client then calls `taskViaPayment()` — i.e. the SAME order-create
- *     call a cash order uses (successPayfortTransaction():10820-10832) —
- *     just with paymentType 128 instead of CASH. This build does the exact
- *     same thing: the postMessage handler below calls the same /api/order or
- *     recurring/saveRecurringTask this file already uses for cash, with
- *     `paymentType: RAZORPAY`.
+ *     PAYMENT_FOR). Live-tested end to end against this tenant with a real
+ *     session (real curl, real 200): came back `data.url` pointing at
+ *     `.../payment/razorpay_merchant_order_id.html?access_token=...&order_id=...`.
+ *  2. That page (yelo-server/public/razorpay_merchant_order_id.html:402-410)
+ *     is the ACTUAL Razorpay checkout. On success it calls
+ *     `razorPay/updateRazorpayTrasaction` itself, then redirects (real
+ *     top-level navigation, not a message) to `/payment/success.html` with
+ *     the payment details on the query string, and ALSO tries
+ *     `window.parent.postMessage(...)` — which only ever reaches a real
+ *     PARENT, i.e. an iframe embedder. In a popup, `window.parent === window`
+ *     itself, so that particular call is a no-op for us; it's the redirect
+ *     that actually carries the result forward.
+ *  3. `success.html` (yelo-server/public/payment_gateways/success.html:55-98)
+ *     is written for BOTH cases and says so in its own comment —
+ *     `window.parent` "post message to Iframe Opener window" vs.
+ *     `window.opener` "post message to window that opened the window via
+ *     window.open" — and calls `window.opener.postMessage({status:'success',
+ *     transactionId, payment_method}, domain_name)`, which IS how a popup's
+ *     result reaches us, then closes itself. This is the real, intended
+ *     popup contract, not a workaround bolted on top of an iframe-only page.
+ *  4. On that message this file calls the SAME order-create path a cash
+ *     order already uses in this component (`/api/order` for one-time,
+ *     `recurring/saveRecurringTask` for a subscription) with
+ *     `paymentType: RAZORPAY` — matching the real client, which also just
+ *     calls its normal task-creation function after a successful gateway
+ *     payment (payment.component.ts successPayfortTransaction():10820-10832
+ *     → taskViaPayment()), it doesn't invent a separate "paid" order type.
  *
- * ONE GAP, STATED PLAINLY: yelo-server records the gateway's own transaction
- * id via a `transaction_id` field on the order (customer_open_apis.js:6444),
- * but that field isn't in this shared app's `buildOrderBody()` (lib/order.js,
- * outside this workspace — read-only from here), so the order records
- * "paid via Razorpay" (payment_method 128) but not the specific payment id.
- * Reconciling a specific payment against a specific order needs that field
- * added to the shared order contract, not something fixable from this file.
+ * TWO HONEST GAPS:
+ *  - `success.html`'s exact query-string contract (which params reach it,
+ *    and in what casing) sits behind a multi-hop redirect this can't execute
+ *    in a real browser from this workspace (CLAUDE.md: no Playwright/browser
+ *    here) — the popup mechanism and the message shape above are read
+ *    straight from that file's own source, but only a real signed-in payment
+ *    run confirms the last hop end to end.
+ *  - yelo-server records a gateway's transaction id via a `transaction_id`
+ *    field on the order (customer_open_apis.js:6444), but that field isn't in
+ *    this shared app's `buildOrderBody()` (lib/order.js, outside this
+ *    workspace — read-only from here), so the order records "paid via
+ *    Razorpay" (payment_method 128) but not the specific payment id.
  */
-import { Suspense, useEffect, useState, useCallback, useMemo } from 'react';
+import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCart } from '../lib/cart';
@@ -188,8 +209,13 @@ function ClassCheckoutInner({
   const [error, setError] = useState('');
   const [badFields, setBadFields] = useState([]);
   const [currencyId, setCurrencyId] = useState(undefined);
-  const [razorpayUrl, setRazorpayUrl] = useState('');
   const [razorpayStarting, setRazorpayStarting] = useState(false);
+  const [razorpayWaiting, setRazorpayWaiting] = useState(false);
+  // Plain refs, not state: the popup handle and a "did we already finish"
+  // flag are read from a setInterval closure and a window 'message' handler,
+  // neither of which needs a re-render when they change.
+  const razorpayPopupRef = useRef(null);
+  const razorpaySucceededRef = useRef(false);
 
   // Same recap params RecurringSummary.jsx reads off the URL, set by
   // SubscribeScheduler.jsx's proceed() when the parent chose "Subscribe".
@@ -437,23 +463,25 @@ function ClassCheckoutInner({
     setError(r.message || 'Payment went through, but the booking could not be recorded — contact support with your Razorpay receipt, nothing will be charged twice.');
   }
 
-  // window.onmessage, exactly like the real client's iframe listener
-  // (payment.component.ts:928-1078): the hosted Razorpay page posts back to
-  // whichever window opened it, there's no other channel.
+  // window.onmessage — but listening for the shape success.html actually
+  // sends a popup opener (`{status:'success', transactionId, payment_method}`,
+  // yelo-server/public/payment_gateways/success.html:55-98), not the
+  // iframe-only `window.parent` message the intermediate checkout page also
+  // tries (dead in a popup — see the file header). Guarded on
+  // razorpayPopupRef so an unrelated message on the page can't be mistaken
+  // for a payment result.
   useEffect(() => {
     function onMessage(event) {
       const d = event.data;
       if (!d || typeof d !== 'object') return;
-      if (d.payment_method !== 128 && d.payment_method !== 5025) return;
-      if (d.action === 'close') {
-        setRazorpayUrl('');
-        setError('Payment window closed — nothing was charged.');
-        return;
-      }
-      setTimeout(() => {
-        setRazorpayUrl('');
-        completeAfterRazorpay();
-      }, 1500);
+      if (!razorpayPopupRef.current) return;
+      const looksLikeSuccess = d.status === 'success' || d.payment_method === 128 || d.payment_method === 5025;
+      if (!looksLikeSuccess || d.action === 'close') return;
+      razorpaySucceededRef.current = true;
+      try { razorpayPopupRef.current.close(); } catch {}
+      razorpayPopupRef.current = null;
+      setRazorpayWaiting(false);
+      completeAfterRazorpay();
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -464,6 +492,22 @@ function ClassCheckoutInner({
     if (!session?.vendorId || !session?.token) {
       return setError('Sign in to pay online — Razorpay needs a real account.');
     }
+
+    // X-Frame-Options: sameorigin on the hosted payment page rules out an
+    // iframe (see file header) — this opens a real popup instead. It has to
+    // be opened SYNCHRONOUSLY, before the await below, or every browser
+    // treats it as an unrequested popup and blocks it silently: a blank
+    // window now, navigated to the real URL once we have it.
+    const popup = window.open('', 'yelo-razorpay', 'width=460,height=680');
+    if (!popup) {
+      return setError('Your browser blocked the payment window — allow pop-ups for this site and try again.');
+    }
+    try {
+      popup.document.write('<!doctype html><title>Razorpay</title><body style="font:14px -apple-system,sans-serif;padding:32px;color:#444">Loading payment…</body>');
+    } catch { /* cross-origin write failures are harmless — the real URL replaces this shortly */ }
+    razorpaySucceededRef.current = false;
+    razorpayPopupRef.current = popup;
+
     const merged = { ...(session || {}), ...contact };
     if (typeof window !== 'undefined') saveSession(merged);
 
@@ -490,10 +534,26 @@ function ClassCheckoutInner({
     setRazorpayStarting(false);
 
     if (r?.status === 200 && r?.data?.url) {
-      // The real client appends its own origin so the hosted page knows
-      // where to postMessage the result back to (payment.component.ts:1720-1722).
-      setRazorpayUrl(`${r.data.url}&domain_name=${encodeURIComponent(window.location.origin)}`);
+      setRazorpayWaiting(true);
+      // The real client appends its own origin so the hosted page (and the
+      // success.html it redirects to) knows where to postMessage the result
+      // — see the file header for exactly which page reads this.
+      popup.location.href = `${r.data.url}&domain_name=${encodeURIComponent(window.location.origin)}`;
+      // success.html closes itself on success; this only fires for a manual
+      // close or one that happens before any message ever arrives.
+      const poll = setInterval(() => {
+        if (!razorpayPopupRef.current || razorpayPopupRef.current.closed) {
+          clearInterval(poll);
+          if (!razorpaySucceededRef.current) {
+            razorpayPopupRef.current = null;
+            setRazorpayWaiting(false);
+            setError('Payment window closed — nothing was charged.');
+          }
+        }
+      }, 700);
     } else {
+      try { popup.close(); } catch { /* already gone */ }
+      razorpayPopupRef.current = null;
       setError(r?.message || 'Could not start Razorpay — please try another payment method.');
     }
   }
@@ -826,14 +886,20 @@ function ClassCheckoutInner({
             )}
 
             {error && <div className="ck-error" role="alert">{error}</div>}
+            {razorpayWaiting && (
+              <div className="ck-rzp-note" role="status">
+                Finish paying in the Razorpay window that just opened — this page will move on by itself once it's done.
+              </div>
+            )}
 
             <button
               className="ck-place"
               data-busy={placing || razorpayStarting ? '1' : undefined}
-              disabled={placing || billing || !bill || billFailed || razorpayStarting || (isSubscription && recurringBillState === 'loading')}
+              disabled={placing || billing || !bill || billFailed || razorpayStarting || razorpayWaiting || (isSubscription && recurringBillState === 'loading')}
               onClick={place}
             >
               {razorpayStarting ? 'Opening Razorpay…'
+                : razorpayWaiting ? 'Waiting for payment…'
                 : placing ? (pay === RAZORPAY ? 'Confirming payment…' : usesRecurringApi ? 'Subscribing…' : 'Enrolling…')
                 : billing || (isSubscription && recurringBillState === 'loading') ? 'Updating total…'
                 : pay === RAZORPAY ? `${ctaLabel} with Razorpay · ${money(total)}`
@@ -843,22 +909,6 @@ function ClassCheckoutInner({
           </section>
         </div>
       </div>
-
-      {razorpayUrl && (
-        <div className="ck-rzp-overlay" role="dialog" aria-modal="true" aria-label="Pay with Razorpay">
-          <div className="ck-rzp-modal">
-            <button
-              type="button"
-              className="ck-rzp-close"
-              aria-label="Close payment window"
-              onClick={() => { setRazorpayUrl(''); setError('Payment window closed — nothing was charged.'); }}
-            >
-              ×
-            </button>
-            <iframe src={razorpayUrl} title="Razorpay payment" className="ck-rzp-frame" />
-          </div>
-        </div>
-      )}
       <style>{css}</style>
     </div>
   );
@@ -899,25 +949,9 @@ const css = `
 }
 .ck-sched dd{ margin:0; font-size:13px; font-weight:600; text-align:right; }
 
-.ck-rzp-overlay{
-  position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center;
-  padding:16px; background:color-mix(in srgb, var(--brand-ink) 55%, transparent);
-}
-.ck-rzp-modal{
-  position:relative; width:100%; max-width:460px; height:min(640px, 92vh);
-  background:var(--brand-surface); border-radius:var(--radius-lg); overflow:hidden;
-  box-shadow:0 30px 60px -20px color-mix(in srgb, var(--brand-ink) 45%, transparent);
-}
-.ck-rzp-frame{ width:100%; height:100%; border:0; display:block; }
-.ck-rzp-close{
-  position:absolute; top:8px; right:8px; z-index:1; width:32px; height:32px; border-radius:50%;
-  border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink);
-  font-size:20px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;
-}
-.ck-rzp-close:hover{ border-color:var(--brand-accent); color:var(--brand-accent); }
-.ck-rzp-close:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
-@media (max-width:480px){
-  .ck-rzp-overlay{ padding:0; }
-  .ck-rzp-modal{ max-width:100%; height:100%; border-radius:0; }
+.ck-rzp-note{
+  margin:-4px 0 2px; padding:10px 12px; border-radius:var(--radius);
+  background:var(--brand-accent-soft); color:var(--brand-ink); font-size:.82rem; line-height:1.4;
+  border:1px solid color-mix(in srgb, var(--brand-accent) 24%, var(--brand-line));
 }
 `;
