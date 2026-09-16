@@ -110,21 +110,21 @@
  *    workspace — read-only from here), so the order records "paid via
  *    Razorpay" (payment_method 128) but not the specific payment id.
  *
- * RAZORPAY IS NOT AVAILABLE FOR A SUBSCRIPTION — this is a real, hard
- * backend rule, not a bug: `recurring/saveRecurringTask`'s own handler
- * rejects any payment_method other than CASH/WALLET/PAYLATER outright
- * (yelo-server recurringController.js:1337-1344 — throws
- * `INVALID_PAYMENT_METHOD`, surfaced to the customer as "This Payment Method
- * is not allowed for subscription task, please contact your admin.", which
- * is exactly the error this build hit). The real client enforces the same
- * thing client-side before ever attempting a charge
- * (payment.component.ts:3745-3751, `recurringAllowedPayments` — a tenant
- * config list that can only ever contain those same three methods, because
- * the backend won't accept anything else regardless of tenant settings).
- * So "Pay online" is only offered for a ONE-TIME class below —
- * `create_task_via_vendor_v2` has no such restriction — and is hidden (not
- * just disabled) for a subscription checkout, with an honest reason shown
- * instead of a button that can never succeed.
+ * RAZORPAY FOR A SUBSCRIPTION — previously blocked here after a real,
+ * live-verified rejection: `recurring/saveRecurringTask`'s handler used to
+ * reject any payment_method besides CASH/WALLET/PAYLATER outright
+ * (yelo-server recurringController.js:1337-1344 — threw
+ * `INVALID_PAYMENT_METHOD`, surfaced as "This Payment Method is not allowed
+ * for subscription task, please contact your admin.", which is exactly the
+ * error that came back). The platform side of that restriction has now been
+ * changed (per instruction, not something re-verified from this workspace —
+ * there's no way to call the backend as a different, patched version of
+ * itself), so this re-enables the option: "Pay online" shows for a
+ * subscription again, and a successful payment there calls
+ * `recurring/saveRecurringTask` with `paymentType: RAZORPAY`, same as it
+ * calls `/api/order` for a one-time class. If that backend change isn't
+ * actually live yet, the exact same error will resurface — that's the
+ * backend telling the truth about its own state, not a frontend bug.
  */
 import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
@@ -397,11 +397,9 @@ function ClassCheckoutInner({
   // (non subscription-plan) payment — there's no guest path for paying
   // online, unlike cash. Verified live: a call with no real session comes
   // back `status:101 "Session expired"` rather than succeeding.
-  // isSubscription is excluded outright: recurring/saveRecurringTask's own
-  // handler rejects any payment_method besides CASH/WALLET/PAYLATER
-  // (verified live — see the file header), so Razorpay could never actually
-  // complete a subscription enrollment regardless of session state.
-  const canRazorpay = !!(session?.vendorId && session?.token) && !isSubscription;
+  // No longer excluding isSubscription — see the file header on the
+  // recurring-task payment_method restriction and its (reported) fix.
+  const canRazorpay = !!(session?.vendorId && session?.token);
 
   useEffect(() => {
     if (pay === PAYMENT.WALLET && (walletShort || !wallet.enabled) && allowCash) {
@@ -432,6 +430,52 @@ function ClassCheckoutInner({
   async function completeAfterRazorpay() {
     const merged = { ...(session || {}), ...contact };
     setPlacing(true);
+
+    if (isSubscription) {
+      const requestBody = buildOrderBody({
+        storeId: cart.storeId,
+        items: cart.items,
+        address: ONLINE_PLACEHOLDER,
+        session: merged,
+        paymentType: RAZORPAY,
+        bill,
+        deliveryType: 2,
+        config: { currencyId },
+        envelope: YELO_TENANT,
+      });
+      const r = await yeloPost('recurring/saveRecurringTask', {
+        ...YELO_TENANT,
+        user_id: cart.storeId,
+        vendor_id: merged.vendorId,
+        access_token: merged.token,
+        day_array: dayArray,
+        schedule_time: scheduleTime,
+        start_schedule: startSchedule,
+        occurrence_count: recurringOccurrences,
+        ...(cycleType ? { cycle_type: cycleType } : {}),
+        request_body: JSON.stringify({ ...requestBody, google_meet: 1 }),
+      });
+      setPlacing(false);
+      if (r?.status === 200) {
+        setPlaced({
+          orderId: r.data?.rule_id || null,
+          storeId: cart.storeId,
+          storeName: cart.storeName,
+          vendorId: merged.vendorId,
+          accessToken: merged.token,
+          items: cart.items.map((it) => ({ ...it })),
+          bill,
+          isSubscription: true,
+        });
+        cart.clear();
+        return;
+      }
+      // If the backend's own restriction (see file header) isn't actually
+      // patched yet, this is exactly the error that comes back — real, from
+      // the backend, not this file guessing wrong.
+      setError(r?.message || 'Payment went through, but the subscription could not be created — contact support with your Razorpay receipt, nothing will be charged twice.');
+      return;
+    }
 
     const r = await post('/api/order', {
       storeId: cart.storeId,
@@ -493,11 +537,11 @@ function ClassCheckoutInner({
   }, [session, contact, cart.items, cart.storeId, cart.storeName, isSubscription, dayArray, scheduleTime, startSchedule, recurringOccurrences, cycleType, bill, currencyId]);
 
   async function startRazorpayPayment() {
-    if (isSubscription) {
-      return setError('Razorpay isn’t available for a subscription — pick "Pay at the session" or your wallet instead.');
-    }
     if (!session?.vendorId || !session?.token) {
       return setError('Sign in to pay online — Razorpay needs a real account.');
+    }
+    if (isSubscription && (!dayArray.length || !scheduleTime)) {
+      return setError('Pick a day and time on the class page before subscribing.');
     }
 
     // X-Frame-Options: sameorigin on the hosted payment page rules out an
@@ -797,7 +841,7 @@ function ClassCheckoutInner({
                 <span className="ck-pay-b"><b>Pay at the session</b><small>Settle with the teacher directly</small></span>
               </label>
             )}
-            {allowRazorpay && !isSubscription && (
+            {allowRazorpay && (
               <label className={`ck-pay ${pay === RAZORPAY ? 'on' : ''} ${!canRazorpay ? 'off' : ''}`}>
                 <input type="radio" name="pay" disabled={!canRazorpay}
                   checked={pay === RAZORPAY} onChange={() => setPay(RAZORPAY)} />
@@ -807,11 +851,6 @@ function ClassCheckoutInner({
                   <small>{canRazorpay ? 'Card, UPI or netbanking — secured by Razorpay' : 'Sign in to pay online with Razorpay'}</small>
                 </span>
               </label>
-            )}
-            {allowRazorpay && isSubscription && (
-              <p className="ck-pay-note">
-                Paying online isn't available for a subscription — Yelo only allows cash, wallet or pay-later for recurring classes. Choose one below.
-              </p>
             )}
             {allowWallet && (
               <label className={`ck-pay ${pay === PAYMENT.WALLET ? 'on' : ''} ${!wallet.enabled || walletShort ? 'off' : ''}`}>
@@ -989,11 +1028,6 @@ const css = `
   color:var(--muted, var(--brand-ink-soft));
 }
 .ck-sched dd{ margin:0; font-size:13px; font-weight:600; text-align:right; }
-
-.ck-pay-note{
-  margin:2px 0 0; font-size:.78rem; line-height:1.45; color:var(--brand-ink-soft);
-  padding:9px 11px; border-radius:var(--radius); background:var(--brand-paper); border:1px dashed var(--brand-line);
-}
 .ck-rzp-note{
   margin:-4px 0 2px; padding:10px 12px; border-radius:var(--radius);
   background:var(--brand-accent-soft); color:var(--brand-ink); font-size:.82rem; line-height:1.4;
