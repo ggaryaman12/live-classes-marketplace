@@ -211,6 +211,10 @@ function ClassCheckoutInner({
   const [currencyId, setCurrencyId] = useState(undefined);
   const [razorpayStarting, setRazorpayStarting] = useState(false);
   const [razorpayWaiting, setRazorpayWaiting] = useState(false);
+  // The payment window closed and we never got a clean success/cancel
+  // signal from it — see the note in startRazorpayPayment for why this is
+  // asked rather than guessed either way.
+  const [razorpayAmbiguous, setRazorpayAmbiguous] = useState(false);
   // Plain refs, not state: the popup handle and a "did we already finish"
   // flag are read from a setInterval closure and a window 'message' handler,
   // neither of which needs a re-render when they change.
@@ -463,24 +467,40 @@ function ClassCheckoutInner({
     setError(r.message || 'Payment went through, but the booking could not be recorded — contact support with your Razorpay receipt, nothing will be charged twice.');
   }
 
-  // window.onmessage — but listening for the shape success.html actually
-  // sends a popup opener (`{status:'success', transactionId, payment_method}`,
-  // yelo-server/public/payment_gateways/success.html:55-98), not the
-  // iframe-only `window.parent` message the intermediate checkout page also
-  // tries (dead in a popup — see the file header). Guarded on
-  // razorpayPopupRef so an unrelated message on the page can't be mistaken
-  // for a payment result.
+  // window.onmessage — widened after a real report of "payment succeeded,
+  // order never got created". success.html's own comment documents the
+  // shape it sends a popup opener (`{status:'success', transactionId,
+  // payment_method}`, yelo-server/public/payment_gateways/success.html:55-98)
+  // and that's still the primary match, but that page is reached through a
+  // real multi-hop redirect (razorpay_merchant_order_id.html ->
+  // razorPay/updateRazorpayTrasaction -> /payment/success.html) this
+  // workspace has no browser to actually run end to end (CLAUDE.md: no
+  // Playwright here) — so the exact query-string casing that survives every
+  // hop, and whether the browser even preserves `window.opener` across that
+  // chain, can't be fully confirmed from source reading alone. Rather than
+  // risk missing the real message because of a shape mismatch, ANY object
+  // message that arrives while we're actively waiting on OUR OWN popup
+  // (razorpayPopupRef.current is only set for the lifetime of one payment
+  // attempt) is treated as the result, unless it explicitly says
+  // action:'close'. console.info left in on purpose — open dev tools during
+  // a real test payment and the exact shape that arrives is now visible.
   useEffect(() => {
     function onMessage(event) {
       const d = event.data;
       if (!d || typeof d !== 'object') return;
       if (!razorpayPopupRef.current) return;
-      const looksLikeSuccess = d.status === 'success' || d.payment_method === 128 || d.payment_method === 5025;
-      if (!looksLikeSuccess || d.action === 'close') return;
+      console.info('[razorpay] message received from payment window:', d, 'origin:', event.origin);
+      if (d.action === 'close') {
+        razorpayPopupRef.current = null;
+        setRazorpayWaiting(false);
+        setError('Payment window closed — nothing was charged.');
+        return;
+      }
       razorpaySucceededRef.current = true;
       try { razorpayPopupRef.current.close(); } catch {}
       razorpayPopupRef.current = null;
       setRazorpayWaiting(false);
+      setRazorpayAmbiguous(false);
       completeAfterRazorpay();
     }
     window.addEventListener('message', onMessage);
@@ -507,6 +527,7 @@ function ClassCheckoutInner({
     } catch { /* cross-origin write failures are harmless — the real URL replaces this shortly */ }
     razorpaySucceededRef.current = false;
     razorpayPopupRef.current = popup;
+    setRazorpayAmbiguous(false);
 
     const merged = { ...(session || {}), ...contact };
     if (typeof window !== 'undefined') saveSession(merged);
@@ -539,15 +560,22 @@ function ClassCheckoutInner({
       // success.html it redirects to) knows where to postMessage the result
       // — see the file header for exactly which page reads this.
       popup.location.href = `${r.data.url}&domain_name=${encodeURIComponent(window.location.origin)}`;
-      // success.html closes itself on success; this only fires for a manual
-      // close or one that happens before any message ever arrives.
+      // A cross-origin popup gives no way to peek at what's happening inside
+      // it besides postMessage and this closed check — there's no third
+      // channel. If it closes and we never got a message, we genuinely don't
+      // know whether that's a cancel or a real payment whose message got
+      // lost (e.g. the browser severing window.opener partway through the
+      // redirect chain). Guessing wrong in either direction is bad — a false
+      // "nothing was charged" risks a double payment, a silent order-create
+      // risks charging nobody for a real order. So this asks, rather than
+      // assumes: see the razorpayAmbiguous banner below.
       const poll = setInterval(() => {
         if (!razorpayPopupRef.current || razorpayPopupRef.current.closed) {
           clearInterval(poll);
           if (!razorpaySucceededRef.current) {
             razorpayPopupRef.current = null;
             setRazorpayWaiting(false);
-            setError('Payment window closed — nothing was charged.');
+            setRazorpayAmbiguous(true);
           }
         }
       }, 700);
@@ -556,6 +584,16 @@ function ClassCheckoutInner({
       razorpayPopupRef.current = null;
       setError(r?.message || 'Could not start Razorpay — please try another payment method.');
     }
+  }
+
+  function confirmRazorpayPaidManually() {
+    setRazorpayAmbiguous(false);
+    completeAfterRazorpay();
+  }
+
+  function denyRazorpayPaidManually() {
+    setRazorpayAmbiguous(false);
+    setError('No problem — nothing was recorded as paid. Pick a payment method to try again.');
   }
 
   async function place() {
@@ -891,15 +929,26 @@ function ClassCheckoutInner({
                 Finish paying in the Razorpay window that just opened — this page will move on by itself once it's done.
               </div>
             )}
+            {razorpayAmbiguous && (
+              <div className="ck-rzp-ambiguous" role="alert">
+                <p>The payment window closed and we couldn't confirm what happened in it.</p>
+                <p><b>Did you finish paying on Razorpay?</b></p>
+                <div className="ck-rzp-ambiguous-actions">
+                  <button type="button" className="ck-rzp-yes" onClick={confirmRazorpayPaidManually}>Yes, I paid — finish enrolling</button>
+                  <button type="button" className="ck-rzp-no" onClick={denyRazorpayPaidManually}>No, I didn't pay</button>
+                </div>
+              </div>
+            )}
 
             <button
               className="ck-place"
               data-busy={placing || razorpayStarting ? '1' : undefined}
-              disabled={placing || billing || !bill || billFailed || razorpayStarting || razorpayWaiting || (isSubscription && recurringBillState === 'loading')}
+              disabled={placing || billing || !bill || billFailed || razorpayStarting || razorpayWaiting || razorpayAmbiguous || (isSubscription && recurringBillState === 'loading')}
               onClick={place}
             >
               {razorpayStarting ? 'Opening Razorpay…'
                 : razorpayWaiting ? 'Waiting for payment…'
+                : razorpayAmbiguous ? 'Confirm above to continue'
                 : placing ? (pay === RAZORPAY ? 'Confirming payment…' : usesRecurringApi ? 'Subscribing…' : 'Enrolling…')
                 : billing || (isSubscription && recurringBillState === 'loading') ? 'Updating total…'
                 : pay === RAZORPAY ? `${ctaLabel} with Razorpay · ${money(total)}`
@@ -954,4 +1003,17 @@ const css = `
   background:var(--brand-accent-soft); color:var(--brand-ink); font-size:.82rem; line-height:1.4;
   border:1px solid color-mix(in srgb, var(--brand-accent) 24%, var(--brand-line));
 }
+.ck-rzp-ambiguous{
+  margin:-4px 0 2px; padding:12px 14px; border-radius:var(--radius);
+  background:var(--brand-paper); border:1px solid var(--brand-line);
+}
+.ck-rzp-ambiguous p{ margin:0 0 6px; font-size:.85rem; line-height:1.45; color:var(--brand-ink); }
+.ck-rzp-ambiguous p:last-of-type{ margin-bottom:10px; }
+.ck-rzp-ambiguous-actions{ display:flex; flex-wrap:wrap; gap:8px; }
+.ck-rzp-ambiguous-actions button{
+  font:inherit; font-weight:700; font-size:.82rem; padding:9px 14px; border-radius:980px; cursor:pointer;
+  border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink);
+}
+.ck-rzp-yes{ border-color:var(--brand-accent) !important; background:var(--brand-accent) !important; color:var(--brand-accent-ink) !important; }
+.ck-rzp-ambiguous-actions button:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 `;
