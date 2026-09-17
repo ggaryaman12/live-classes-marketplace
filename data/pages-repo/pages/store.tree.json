@@ -16,7 +16,8 @@
         "faq",
         "trust",
         "myCourses",
-        "profileLink"
+        "profileLink",
+        "chat"
       ]
     },
     "header1": {
@@ -93,6 +94,13 @@
       "type": "Custom",
       "props": {
         "component": "ProfileLink"
+      }
+    },
+    "chat": {
+      "id": "chat",
+      "type": "Custom",
+      "props": {
+        "component": "HippoChatLauncher"
       }
     }
   }

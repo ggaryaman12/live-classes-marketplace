@@ -31,6 +31,7 @@
       "DatePicker.jsx",
       "EnrollConfirm.jsx",
       "EnrollHeader.jsx",
+      "HippoChatLauncher.jsx",
       "HowLiveWorks.jsx",
       "LiveCatalogue.jsx",
       "LiveClasses.jsx",
