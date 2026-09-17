@@ -12,6 +12,7 @@ import * as m_BellHero from './BellHero.jsx';
 import * as m_ClassCheckout from './ClassCheckout.jsx';
 import * as m_ClassDetail from './ClassDetail.jsx';
 import * as m_ClassSearch from './ClassSearch.jsx';
+import * as m_CreateAccount from './CreateAccount.jsx';
 import * as m_DatePicker from './DatePicker.jsx';
 import * as m_EnrollConfirm from './EnrollConfirm.jsx';
 import * as m_EnrollHeader from './EnrollHeader.jsx';
@@ -60,6 +61,7 @@ export const CUSTOM = Object.fromEntries(Object.entries({
   ClassCheckout: pick(m_ClassCheckout, 'ClassCheckout'),
   ClassDetail: pick(m_ClassDetail, 'ClassDetail'),
   ClassSearch: pick(m_ClassSearch, 'ClassSearch'),
+  CreateAccount: pick(m_CreateAccount, 'CreateAccount'),
   DatePicker: pick(m_DatePicker, 'DatePicker'),
   EnrollConfirm: pick(m_EnrollConfirm, 'EnrollConfirm'),
   EnrollHeader: pick(m_EnrollHeader, 'EnrollHeader'),
