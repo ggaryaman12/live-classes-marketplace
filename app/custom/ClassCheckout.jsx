@@ -262,6 +262,13 @@ function ClassCheckoutInner({
   const razorpayOrderIdRef = useRef(null);
   const [razorpayVerifying, setRazorpayVerifying] = useState(false);
 
+  // Real completion signal, not the ephemeral `placed` state below — this is
+  // what survives a reload or a revisited/shared link. Same key list
+  // EnrollHeader.jsx and SubscribeScheduler.jsx check, kept in sync with
+  // both: whichever of these lands on the URL means the order/subscription
+  // genuinely exists already, so the live form must never render again.
+  const confirmed = ['order', 'order_id', 'job_id', 'rule_id', 'enrolled'].some((k) => params.get(k));
+
   // Same recap params RecurringSummary.jsx reads off the URL, set by
   // SubscribeScheduler.jsx's proceed() when the parent chose "Subscribe".
   const isSubscription = params.get('recurring') === '1';
@@ -735,6 +742,26 @@ function ClassCheckoutInner({
     setError('We couldn’t confirm whether that payment went through. If Razorpay actually charged you, contact us with your payment reference before paying again — otherwise pick a payment method to retry.');
   }
 
+  // EnrollHeader's step marker (the "Schedule / Details & payment /
+  // Confirmed" bar) reads completion from the URL — `done` is true only once
+  // one of order/order_id/job_id/rule_id/enrolled is present as a query
+  // param. Every place() / completeAfterRazorpay() branch below used to only
+  // set the `placed` REACT STATE and never touch the URL, so once an order or
+  // subscription actually went through, the confirmation content rendered
+  // correctly but the header above it kept showing "Details & payment" as
+  // the current step (and "Schedule" as a clickable link back) — a real,
+  // reported bug: nothing here actually blocked stepping back into a
+  // finished checkout, the header just never learned it was finished. This
+  // is the one place that needs to know, so it's a single effect rather than
+  // repeating the same router call in every success branch above.
+  useEffect(() => {
+    if (!placed) return;
+    const sp = new URLSearchParams(params.toString());
+    sp.set('enrolled', '1');
+    router.replace(`?${sp.toString()}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placed]);
+
   async function place() {
     setError('');
     setBadFields([]);
@@ -895,6 +922,31 @@ function ClassCheckoutInner({
           session={session}
         />
         <button className="ck-place ck-done-btn" onClick={() => router.push('/stores')}>Back to teachers</button>
+      </div>
+    );
+  }
+
+  // A reload (or a bookmarked/shared link) after a real confirmation drops
+  // the `placed` state above — it's plain React state, not read from the
+  // URL — but `enrolled=1` (set the moment an order/rule is actually
+  // created, see the effect above) stays on the URL. Without this check the
+  // live payment form would render again on reload, which is exactly the
+  // "still able to navigate back into checkout after paying" bug being
+  // fixed here: it isn't enough to hide the header's back-link, a full
+  // reload must not resurrect the form either. This can't rebuild the full
+  // receipt (that needs a real backend re-fetch by order id, which is a
+  // bigger change than this fix), so it shows a plain, honest notice instead
+  // of either the form or a receipt it can't actually prove.
+  if (confirmed) {
+    return (
+      <div className="ck-done">
+        <h1>Already confirmed</h1>
+        <p className="ck-done-sub">
+          This {isSubscription ? 'subscription' : 'enrollment'} was already submitted — check your email, or your subscriptions list, for the details.
+        </p>
+        <button className="ck-place ck-done-btn" onClick={() => router.push(isSubscription ? '/p/my-subscriptions' : '/stores')}>
+          {isSubscription ? 'View my subscriptions' : 'Back to teachers'}
+        </button>
       </div>
     );
   }
