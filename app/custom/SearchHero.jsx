@@ -36,7 +36,6 @@ function SearchHeroInner({
   const router = useRouter();
   const params = useSearchParams();
   const rootRef = useRef(null);
-  const p1 = useRef(null);
   const p2 = useRef(null);
   const p3 = useRef(null);
   const [q, setQ] = useState(params.get("q") || "");
@@ -68,7 +67,6 @@ function SearchHeroInner({
       cx += (tx - cx) * 0.05;
       cy += (ty - cy) * 0.05;
       const s = window.scrollY || 0;
-      if (p1.current) p1.current.style.transform = `translate3d(${cx * 6}px, ${cy * 4 + s * 0.05}px, 0)`;
       if (p2.current) p2.current.style.transform = `translate3d(${cx * 16}px, ${cy * 10 + s * 0.02}px, 0)`;
       if (p3.current) p3.current.style.transform = `translate3d(${cx * 30}px, ${cy * 18 - s * 0.04}px, 0)`;
       raf = requestAnimationFrame(tick);
@@ -101,12 +99,6 @@ function SearchHeroInner({
       <div ref={p2} className="bsh-plane bsh-p2" aria-hidden="true">
         {grid("b")}
       </div>
-      <div ref={p1} className="bsh-plane bsh-p1" aria-hidden="true">
-        <span className="bsh-chip bsh-chip-1">Sat · 10:00 AM</span>
-        <span className="bsh-chip bsh-chip-2">Tue · 4:30 PM</span>
-        <span className="bsh-chip bsh-chip-3">3 seats left</span>
-      </div>
-
       <div className="bsh-frame">
         <p className="bsh-eyebrow">{eyebrow}</p>
         <h1 className="bsh-title">
@@ -178,19 +170,6 @@ const css = `
 }
 .bsh-p3{ filter:blur(4px); opacity:.5; }
 .bsh-p2{ opacity:.7; }
-.bsh-p1{ z-index:1; }
-.bsh-chip{
-  position:absolute; padding:8px 12px; border-radius:980px;
-  background:var(--brand-surface);
-  border:1px solid var(--brand-line);
-  font-size:12px; font-weight:600; color:var(--brand-ink-soft);
-  box-shadow:0 12px 30px -16px color-mix(in srgb, var(--brand-ink) 45%, transparent);
-  animation:bsh-bob 7s ease-in-out infinite;
-}
-.bsh-chip-1{ left:6%; top:20%; }
-.bsh-chip-2{ right:8%; top:14%; animation-delay:-2s; }
-.bsh-chip-3{ right:12%; bottom:16%; color:var(--brand-accent); animation-delay:-4s; }
-@keyframes bsh-bob{ 0%,100%{ translate:0 0 } 50%{ translate:0 -10px } }
 
 .bsh-frame{ position:relative; z-index:2; width:100%; max-width:680px; margin-inline:auto; text-align:center; }
 .bsh-eyebrow{
@@ -242,7 +221,6 @@ const css = `
 
 @media (prefers-reduced-motion: reduce){
   .bsh-plane{ transform:none !important; }
-  .bsh-chip{ animation:none; }
   .bsh-word > span{ transform:none; transition:none; }
 }
 `;
