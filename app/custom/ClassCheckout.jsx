@@ -110,6 +110,24 @@
  *    workspace — read-only from here), so the order records "paid via
  *    Razorpay" (payment_method 128) but not the specific payment id.
  *
+ * IF THE POPUP CLOSES WITH NO MESSAGE, THIS NEVER TRUSTS THE PARENT'S OWN
+ * CLAIM — a real, reported bug: an earlier version showed a "Did you finish
+ * paying?" Yes/No prompt and enrolled on "Yes" with no actual verification,
+ * so anyone could get in for free by clicking it without ever paying.
+ * `verifyRazorpayPayment()` instead asks yelo-server itself:
+ * `razorPay/getRazorPayOrder` (razorPayPaymentController.js:346-410) reads
+ * the transaction's real status, and if it's still pending, calls RAZORPAY'S
+ * OWN API live before answering — it's not this app's guess either way. It
+ * responds with the exact text "Payment is already done" (messageCode
+ * PAYMENT_ALREADY_MADE, english.js:402) only when a payment genuinely went
+ * through, and that specific string is the ONLY thing this treats as
+ * success. A clean "not paid" (status 200, real order data) shows a plain
+ * "nothing was charged" and lets them retry — no order created either way.
+ * Only a truly inconclusive check (bad order id, expired session, network
+ * failure) falls back to asking the parent to contact support rather than
+ * silently deciding for them, and even then there is no "yes, enroll me"
+ * button — that path can never create an order by itself again.
+ *
  * RAZORPAY FOR A SUBSCRIPTION — previously blocked here after a real,
  * live-verified rejection: `recurring/saveRecurringTask`'s handler used to
  * reject any payment_method besides CASH/WALLET/PAYLATER outright
@@ -238,6 +256,11 @@ function ClassCheckoutInner({
   // neither of which needs a re-render when they change.
   const razorpayPopupRef = useRef(null);
   const razorpaySucceededRef = useRef(false);
+  // rzp_order_id from getPaymentUrl's own response — the one real handle we
+  // can use to ask the BACKEND whether a payment actually happened, instead
+  // of trusting the parent's own claim (see razorpayAmbiguous below).
+  const razorpayOrderIdRef = useRef(null);
+  const [razorpayVerifying, setRazorpayVerifying] = useState(false);
 
   // Same recap params RecurringSummary.jsx reads off the URL, set by
   // SubscribeScheduler.jsx's proceed() when the parent chose "Subscribe".
@@ -629,26 +652,28 @@ function ClassCheckoutInner({
 
     if (r?.status === 200 && r?.data?.url) {
       setRazorpayWaiting(true);
+      // rzp_order_id — the real Razorpay order this payment is for — is what
+      // lets us ask the BACKEND afterwards whether it was actually paid,
+      // rather than trusting whatever the parent clicks. See
+      // verifyRazorpayPayment below.
+      razorpayOrderIdRef.current = r.data.rzp_order_id || null;
       // The real client appends its own origin so the hosted page (and the
       // success.html it redirects to) knows where to postMessage the result
       // — see the file header for exactly which page reads this.
       popup.location.href = `${r.data.url}&domain_name=${encodeURIComponent(window.location.origin)}`;
       // A cross-origin popup gives no way to peek at what's happening inside
       // it besides postMessage and this closed check — there's no third
-      // channel. If it closes and we never got a message, we genuinely don't
-      // know whether that's a cancel or a real payment whose message got
-      // lost (e.g. the browser severing window.opener partway through the
-      // redirect chain). Guessing wrong in either direction is bad — a false
-      // "nothing was charged" risks a double payment, a silent order-create
-      // risks charging nobody for a real order. So this asks, rather than
-      // assumes: see the razorpayAmbiguous banner below.
+      // channel. If it closes and we never got a message, this used to just
+      // ASK the parent "did you pay?" and trust a click either way — a real,
+      // reported bug: clicking "Yes" with no payment made still created the
+      // order for free. Ask the BACKEND instead — see verifyRazorpayPayment.
       const poll = setInterval(() => {
         if (!razorpayPopupRef.current || razorpayPopupRef.current.closed) {
           clearInterval(poll);
           if (!razorpaySucceededRef.current) {
             razorpayPopupRef.current = null;
             setRazorpayWaiting(false);
-            setRazorpayAmbiguous(true);
+            verifyRazorpayPayment();
           }
         }
       }, 700);
@@ -659,14 +684,55 @@ function ClassCheckoutInner({
     }
   }
 
-  function confirmRazorpayPaidManually() {
-    setRazorpayAmbiguous(false);
-    completeAfterRazorpay();
+  // THE REAL FIX for "clicked Yes without paying, still got enrolled": never
+  // let the parent's own claim decide this. `razorPay/getRazorPayOrder`
+  // (yelo-server razorPayPaymentController.js:346-410) is a genuine
+  // server-side check — it reads the transaction's real status, and if it's
+  // still pending, calls RAZORPAY'S OWN API (GET /orders/:id) to check again
+  // live before answering. It responds `"Payment is already done"`
+  // (messageCode PAYMENT_ALREADY_MADE, english.js:402) ONLY when the payment
+  // genuinely went through — that specific text is the one and only signal
+  // this treats as "paid". Needs `rzp_order_id` (captured above) and the
+  // session's access_token, matching the validator at
+  // razorpay/validators/*.js: `getRazorPayOrder` (rzp_order_id,
+  // app_access_token both required).
+  async function verifyRazorpayPayment() {
+    const orderId = razorpayOrderIdRef.current;
+    if (!orderId || !session?.token) {
+      // No order id to check, or no session to check it with — genuinely
+      // can't verify either way. Land on the safe side: don't create the
+      // order, and don't claim it wasn't charged either, since we don't
+      // actually know.
+      setRazorpayAmbiguous(true);
+      return;
+    }
+    setRazorpayVerifying(true);
+    const r = await yeloPost('razorPay/getRazorPayOrder', {
+      rzp_order_id: orderId,
+      app_access_token: session.token,
+    });
+    setRazorpayVerifying(false);
+
+    const paid = /already\s*(done|made|paid)/i.test(r?.message || '');
+    if (paid) {
+      completeAfterRazorpay();
+      return;
+    }
+    // status 200 here means Razorpay's own API confirmed it is NOT paid
+    // (the controller only returns normal order/theme data in that case) —
+    // a real negative, not a guess.
+    if (r?.status === 200) {
+      setError('Payment wasn’t completed — nothing was charged. Pick a payment method to try again.');
+      return;
+    }
+    // Anything else (a stale/invalid order id, an expired session, a network
+    // failure) is genuinely inconclusive — same safe default as above.
+    setRazorpayAmbiguous(true);
   }
 
-  function denyRazorpayPaidManually() {
+  function retryRazorpayFromAmbiguous() {
     setRazorpayAmbiguous(false);
-    setError('No problem — nothing was recorded as paid. Pick a payment method to try again.');
+    setError('We couldn’t confirm whether that payment went through. If Razorpay actually charged you, contact us with your payment reference before paying again — otherwise pick a payment method to retry.');
   }
 
   async function place() {
@@ -1012,13 +1078,17 @@ function ClassCheckoutInner({
                 Finish paying in the Razorpay window that just opened — this page will move on by itself once it's done.
               </div>
             )}
+            {razorpayVerifying && (
+              <div className="ck-rzp-note" role="status">
+                Checking with Razorpay whether that payment went through…
+              </div>
+            )}
             {razorpayAmbiguous && (
               <div className="ck-rzp-ambiguous" role="alert">
-                <p>The payment window closed and we couldn't confirm what happened in it.</p>
-                <p><b>Did you finish paying on Razorpay?</b></p>
+                <p>The payment window closed and we couldn't confirm with Razorpay whether it went through.</p>
+                <p>We won't enroll you until we can confirm a real payment — no order is created from a guess either way.</p>
                 <div className="ck-rzp-ambiguous-actions">
-                  <button type="button" className="ck-rzp-yes" onClick={confirmRazorpayPaidManually}>Yes, I paid — finish enrolling</button>
-                  <button type="button" className="ck-rzp-no" onClick={denyRazorpayPaidManually}>No, I didn't pay</button>
+                  <button type="button" className="ck-rzp-retry" onClick={retryRazorpayFromAmbiguous}>OK, let me try again</button>
                 </div>
               </div>
             )}
@@ -1026,11 +1096,12 @@ function ClassCheckoutInner({
             <button
               className="ck-place"
               data-busy={placing || razorpayStarting ? '1' : undefined}
-              disabled={placing || billing || !bill || billFailed || razorpayStarting || razorpayWaiting || razorpayAmbiguous || (isSubscription && recurringBillState === 'loading')}
+              disabled={placing || billing || !bill || billFailed || razorpayStarting || razorpayWaiting || razorpayVerifying || razorpayAmbiguous || (isSubscription && recurringBillState === 'loading')}
               onClick={place}
             >
               {razorpayStarting ? 'Opening Razorpay…'
                 : razorpayWaiting ? 'Waiting for payment…'
+                : razorpayVerifying ? 'Checking payment…'
                 : razorpayAmbiguous ? 'Confirm above to continue'
                 : placing ? (pay === RAZORPAY ? 'Confirming payment…' : usesRecurringApi ? 'Subscribing…' : 'Enrolling…')
                 : billing || (isSubscription && recurringBillState === 'loading') ? 'Updating total…'
@@ -1096,6 +1167,6 @@ const css = `
   font:inherit; font-weight:700; font-size:.82rem; padding:9px 14px; border-radius:980px; cursor:pointer;
   border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink);
 }
-.ck-rzp-yes{ border-color:var(--brand-accent) !important; background:var(--brand-accent) !important; color:var(--brand-accent-ink) !important; }
+.ck-rzp-retry{ border-color:var(--brand-accent) !important; background:var(--brand-accent) !important; color:var(--brand-accent-ink) !important; }
 .ck-rzp-ambiguous-actions button:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 `;
