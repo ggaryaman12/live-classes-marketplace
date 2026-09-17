@@ -13,21 +13,28 @@
  * a button from a file it isn't allowed to edit. What it CAN do — and does
  * — is give "sign out" a real second home here, so a parent who reaches
  * their profile through this page never needs the header's own button.
+ *
+ * SIGNED-OUT STATE ALSO HOSTS A REAL SIGNUP FORM (CreateAccount.jsx) — the
+ * header's own "Create account" was silently failing every real attempt
+ * (traced and fixed there: a wrong field name plus a missing anti-abuse
+ * fingerprint, both outside this workspace to patch directly). Login already
+ * works fine through the header, so this only replaces the broken half.
  */
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getSession, clearSession } from '../lib/session';
+import CreateAccount from './CreateAccount';
 
 export default function Profile() {
   const router = useRouter();
-  const [session, setSession] = useState(null);
+  const [session, setLocalSession] = useState(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setSession(getSession());
+    setLocalSession(getSession());
     setReady(true);
-    const onChange = () => setSession(getSession());
+    const onChange = () => setLocalSession(getSession());
     window.addEventListener('yelo-session', onChange);
     return () => window.removeEventListener('yelo-session', onChange);
   }, []);
@@ -42,10 +49,11 @@ export default function Profile() {
   if (!session?.vendorId) {
     return (
       <section className="pf">
-        <div className="pf-frame pf-empty">
-          <h1>You're not signed in</h1>
-          <p>Sign in from the menu at the top of the page to see your profile.</p>
-          <Link href="/stores" className="pf-cta">Browse classes</Link>
+        <div className="pf-frame pf-empty pf-guest">
+          <h1>Create your account</h1>
+          <p>Already have one? Sign in from the menu at the top of the page instead.</p>
+          <CreateAccount onCreated={() => setLocalSession(getSession())} />
+          <Link href="/stores" className="pf-link pf-browse-link">Browse classes</Link>
         </div>
         <style>{css}</style>
       </section>
@@ -138,6 +146,10 @@ const css = `
 .pf-empty{ text-align:center; padding:48px 24px; background:var(--brand-surface); border:1px solid var(--brand-line); border-radius:var(--radius-lg); }
 .pf-empty h1{ margin:0 0 10px; font-family:var(--brand-font-display); font-size:1.3rem; }
 .pf-empty p{ margin:0 0 18px; color:var(--brand-ink-soft); font-size:.9rem; }
+.pf-guest{ text-align:left; }
+.pf-guest h1{ text-align:center; }
+.pf-guest p{ text-align:center; }
+.pf-browse-link{ display:block; text-align:center; margin-top:14px; }
 .pf-cta{
   display:inline-block; padding:11px 22px; border-radius:980px;
   background:var(--brand-accent); color:var(--brand-accent-ink); font-weight:650; font-size:.88rem; text-decoration:none;
