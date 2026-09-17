@@ -15,15 +15,15 @@
  * workaround: a small, fixed, always-reachable launcher on the pages a
  * parent actually browses, not the header itself.
  *
- * WHY IT MAY SHOW NOTHING YET: the widget needs this tenant's real
- * `fugu_chat_token` (and `is_fugu_bot_enabled`), which the real webapp reads
- * from `marketplace_fetch_app_configuration` — the same endpoint that has
- * been answering with a genuine SQL error for this tenant all session
- * (verified live, repeatedly: status 201, ER_PARSE_ERROR). Rather than fake
- * a chat button with no real business behind it, this only renders once a
- * real token comes back. The moment that config call starts working for
- * this tenant (or a real token is supplied directly), this starts working
- * with no further code changes.
+ * THE TOKEN: the widget needs this tenant's real `fugu_chat_token` (and
+ * `is_fugu_bot_enabled`), which the real webapp reads from
+ * `marketplace_fetch_app_configuration`. That call used to answer with a
+ * genuine SQL error for this tenant — root cause found: `YELO_TENANT.
+ * domain_name` below was wrong (freelancer.jungleworks.me instead of this
+ * tenant's real deliverecttest.devweb1.yelo.red). Fixed now — verified live,
+ * real 200, real `fugu_chat_token`. This still only renders once a real
+ * token actually comes back rather than assuming one, so a tenant with chat
+ * genuinely turned off correctly shows nothing.
  *
  * ONE HONEST GAP: the real client's only confirmed `startConversation(...)`
  * call is for chatting about a specific order (transaction_id, a store
@@ -38,7 +38,7 @@ const YELO_BASE = 'https://test-api-3025.jungleworks.com';
 const YELO_TENANT = {
   marketplace_user_id: 510009445,
   marketplace_reference_id: '7a57517ff024ea5715497555a297e86c',
-  domain_name: 'deliverecttest.freelancer.jungleworks.me',
+  domain_name: 'deliverecttest.devweb1.yelo.red',
   dual_user_key: 0,
   language: 'en',
 };
