@@ -134,10 +134,19 @@ function SubscribeSchedulerInner() {
   const id = params.get("id") || params.get("product");
   const [product, setProduct] = useState(null);
 
+  // Once the subscription is actually confirmed (ClassCheckout.jsx sets
+  // `enrolled=1` on the URL the moment an order/rule is really created — see
+  // its own comment on this), the schedule picker must never come back, even
+  // if something puts `step=schedule` back on the URL (a bookmarked link, a
+  // reload, the back button). Checking placement, not payment, in progress —
+  // the flow is over, full stop.
+  const confirmed = ["order", "order_id", "job_id", "rule_id", "enrolled"].some((k) => params.get(k));
+
   // Stage 2 (details & payment) is active once a real time is locked in and the
   // parent hasn't asked to come back and edit — hide the scheduler then.
   const scheduled =
-    params.get("recurring") === "1" && !!params.get("time") && params.get("step") !== "schedule";
+    confirmed ||
+    (params.get("recurring") === "1" && !!params.get("time") && params.get("step") !== "schedule");
 
   useEffect(() => {
     let cancelled = false;
