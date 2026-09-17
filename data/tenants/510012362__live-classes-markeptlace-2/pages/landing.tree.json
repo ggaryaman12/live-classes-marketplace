@@ -14,7 +14,8 @@
         "teachersLede",
         "grid",
         "trust",
-        "myCourses"
+        "myCourses",
+        "profileLink"
       ]
     },
     "hero": {
@@ -78,6 +79,13 @@
       "type": "Custom",
       "props": {
         "component": "MyCoursesLink"
+      }
+    },
+    "profileLink": {
+      "id": "profileLink",
+      "type": "Custom",
+      "props": {
+        "component": "ProfileLink"
       }
     }
   }

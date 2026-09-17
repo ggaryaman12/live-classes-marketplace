@@ -24,6 +24,8 @@
       "MeetTheInstructor.jsx",
       "MyCoursesLink.jsx",
       "MySubscriptions.jsx",
+      "Profile.jsx",
+      "ProfileLink.jsx",
       "RecurringSummary.jsx",
       "SearchHero.jsx",
       "StartingThisWeek.jsx",
@@ -45,6 +47,7 @@
       "landing.tree.json",
       "merchant-listing.tree.json",
       "my-subscriptions.tree.json",
+      "profile.tree.json",
       "store.tree.json"
     ]
   }

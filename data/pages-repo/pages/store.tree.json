@@ -15,7 +15,8 @@
         "reviews",
         "faq",
         "trust",
-        "myCourses"
+        "myCourses",
+        "profileLink"
       ]
     },
     "header1": {
@@ -85,6 +86,13 @@
       "type": "Custom",
       "props": {
         "component": "MyCoursesLink"
+      }
+    },
+    "profileLink": {
+      "id": "profileLink",
+      "type": "Custom",
+      "props": {
+        "component": "ProfileLink"
       }
     }
   }

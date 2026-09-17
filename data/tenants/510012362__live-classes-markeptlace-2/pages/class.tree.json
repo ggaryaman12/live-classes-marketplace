@@ -7,7 +7,7 @@
       "id": "p1",
       "type": "Page",
       "props": {},
-      "children": ["detail", "myCourses"]
+      "children": ["detail", "myCourses", "profileLink"]
     },
     "detail": {
       "id": "detail",
@@ -23,6 +23,13 @@
       "type": "Custom",
       "props": {
         "component": "MyCoursesLink"
+      }
+    },
+    "profileLink": {
+      "id": "profileLink",
+      "type": "Custom",
+      "props": {
+        "component": "ProfileLink"
       }
     }
   }
