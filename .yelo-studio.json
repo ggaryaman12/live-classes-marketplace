@@ -15,6 +15,7 @@
       "ClassCheckout.jsx",
       "ClassDetail.jsx",
       "ClassSearch.jsx",
+      "CreateAccount.jsx",
       "DatePicker.jsx",
       "EnrollConfirm.jsx",
       "EnrollHeader.jsx",
