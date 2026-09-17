@@ -44,7 +44,7 @@ const FALLBACK = [
 
 const API_BASE = "https://test-api-new-3008.jungleworks.com";
 const QUERY =
-  "domain_name=deliverecttest.freelancer.jungleworks.me&post_to_get=1&marketplace_user_id=510009445" +
+  "domain_name=deliverecttest.devweb1.yelo.red&post_to_get=1&marketplace_user_id=510009445" +
   "&version=2&vendor_id=40951&latitude=28.61482&longitude=77.219989&home_delivery=1&dual_user_key=0&language=en";
 
 export default function SubjectTiles({
