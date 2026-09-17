@@ -7,7 +7,7 @@
       "id": "p1",
       "type": "Page",
       "props": {},
-      "children": ["detail", "myCourses", "profileLink"]
+      "children": ["detail", "myCourses", "profileLink", "chat"]
     },
     "detail": {
       "id": "detail",
@@ -30,6 +30,13 @@
       "type": "Custom",
       "props": {
         "component": "ProfileLink"
+      }
+    },
+    "chat": {
+      "id": "chat",
+      "type": "Custom",
+      "props": {
+        "component": "HippoChatLauncher"
       }
     }
   }
