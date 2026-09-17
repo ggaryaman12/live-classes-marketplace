@@ -33,18 +33,15 @@
  *    161-169 → set-external-lib.service.ts initFuguWidget():91-131).
  *    `startConversation` only does anything once `fuguInit` has registered
  *    the widget with that token.
- * 2. THE SCRIPT URL ITSELF WAS WRONG FOR THIS TENANT. Fetched and read both
- *    real script bodies to check: `chat.hippochat.io/js/widget.js` (what
- *    this file used) is the PRODUCTION build — its source is a small,
- *    hardcoded lookup table of a handful of specific known live customer
- *    tokens, mapped to their own dedicated support URLs, nothing generic.
- *    Our test token (from test-api-3025) is not one of those, so nothing was
- *    ever going to happen with that script no matter how `fuguInit` was
- *    called. `scripts-beta.hippochat.io/public/js/widget-beta.js` is a real,
- *    generic, ~50KB widget implementation that takes any `appSecretKey` —
- *    and it's what the real client's own environment branching
- *    (load-scripts.class.ts:67-75) always loads for anything that isn't a
- *    production build, which this test tenant clearly isn't. Switched to it.
+ * 2. THE SCRIPT URL ITSELF WAS WRONG FOR THIS TENANT. `chat.hippochat.io/
+ *    js/widget.js` (the real client's PRODUCTION build) is a small,
+ *    hardcoded lookup of a handful of specific known live customer tokens —
+ *    a test token was never going to do anything with it. Now pointed at
+ *    `script-dev.hippochat.io/public/js/widget-3002.js`, this tenant's real
+ *    dev widget build (confirmed live: a genuine ~47KB generic widget,
+ *    exposes both `fuguInit` and `startConversation`) — this specific URL,
+ *    not the generic beta one, is what actually matches this backend
+ *    (test-api-3025).
  */
 import { useEffect, useRef, useState } from 'react';
 
@@ -62,7 +59,7 @@ function loadHippoScript() {
     if (document.getElementById('hippoScript')) return resolve(true);
     const script = document.createElement('script');
     script.id = 'hippoScript';
-    script.src = 'https://scripts-beta.hippochat.io/public/js/widget-beta.js';
+    script.src = 'https://script-dev.hippochat.io/public/js/widget-3002.js';
     script.defer = true;
     script.onload = () => resolve(true);
     script.onerror = () => reject(new Error('Hippo chat script failed to load'));
