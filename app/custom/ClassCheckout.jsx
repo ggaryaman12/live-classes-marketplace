@@ -167,7 +167,7 @@ const YELO_BASE = 'https://test-api-3025.jungleworks.com';
 const YELO_TENANT = {
   marketplace_user_id: 510009445,
   marketplace_reference_id: '7a57517ff024ea5715497555a297e86c',
-  domain_name: 'deliverecttest.freelancer.jungleworks.me',
+  domain_name: 'deliverecttest.devweb1.yelo.red',
   dual_user_key: 0,
   language: 'en',
 };
@@ -245,6 +245,7 @@ function ClassCheckoutInner({
   const [error, setError] = useState('');
   const [badFields, setBadFields] = useState([]);
   const [currencyId, setCurrencyId] = useState(undefined);
+  const [currencyCode, setCurrencyCode] = useState('INR');
   const [razorpayStarting, setRazorpayStarting] = useState(false);
   const [razorpayWaiting, setRazorpayWaiting] = useState(false);
   // The payment window closed and we never got a clean success/cancel
@@ -323,22 +324,25 @@ function ClassCheckoutInner({
   // `currentRule.currency_id`) — a missing key here isn't cosmetic, it's a
   // real column on a real INSERT. `marketplace_fetch_app_configuration`
   // (what the normal /api/order route uses server-side via getAppConfig())
-  // is answering with a genuine SQL error for this tenant right now —
-  // verified live, repeatedly: `status:201, {"code":"ER_PARSE_ERROR",...}`,
-  // not something this file can fix (it's inside yelo-server). Rather than
-  // silently let that failure make `currency_id` vanish from the JSON
-  // (JSON.stringify drops an `undefined` value entirely — this is the exact
-  // bug reported), this also tries the store-level endpoint that already
-  // works elsewhere in this build (StoreHeader's real `bind.source:"store"`)
-  // and does carry its own `currency_id` column.
+  // used to answer with a genuine SQL error for this tenant — root-caused,
+  // finally: YELO_TENANT.domain_name was wrong (the freelancer.jungleworks.me
+  // one, not this tenant's real deliverecttest.devweb1.yelo.red), which broke
+  // this endpoint's own tenant lookup. Fixed now — verified live: real 200,
+  // real `currency_id: 16`. The fallback chain below (the store-level
+  // endpoint, then the live bill's own CURRENCY object, then a last-resort
+  // `0`) stays as genuine defense in depth, not because this call is expected
+  // to fail anymore.
+  // Also feeds Razorpay's `currency` field below — real code, not a guess,
+  // now that this call actually resolves this tenant (see the note above).
   useEffect(() => {
-    if (!isSubscription) return;
     let cancelled = false;
     async function loadCurrencyId() {
       const config = await yeloPost('marketplace_fetch_app_configuration', YELO_TENANT);
       if (cancelled) return;
       if (config?.status === 200 && config?.data?.currency_id != null) {
         setCurrencyId(config.data.currency_id);
+        const code = config.data.payment_settings?.[0]?.code;
+        if (code) setCurrencyCode(code);
         return;
       }
       if (!cart.storeId) return;
@@ -354,7 +358,7 @@ function ClassCheckoutInner({
     }
     loadCurrencyId();
     return () => { cancelled = true; };
-  }, [isSubscription, cart.storeId]);
+  }, [cart.storeId]);
 
   // THE CART'S qty × price IS THE WRONG NUMBER FOR A SUBSCRIPTION.
   //
@@ -641,12 +645,11 @@ function ClassCheckoutInner({
       amount: total,
       app_type: 'WEB',
       payment_for: 0, // CREATE_TASK — yelo-server properties/constants.js PAYMENT_FOR
-      // marketplace_fetch_app_configuration (which would normally supply the
-      // real currency CODE, payment.component.ts:1634) returns a genuine SQL
-      // error for this tenant right now — verified live: status 201,
-      // ER_PARSE_ERROR. Every price on this storefront is already ₹, so INR
-      // is the honest fallback, not an invented value.
-      currency: 'INR',
+      // Real currency code from marketplace_fetch_app_configuration's
+      // payment_settings[0].code (payment.component.ts:1634 reads the same
+      // field) — verified live for this tenant: "INR". 'INR' state default
+      // only covers the brief window before that call resolves.
+      currency: currencyCode,
       name: merged.name || 'Parent',
       email: merged.email || 'contact@yelo.red', // the backend's own default for a blank email (paymentValidator.js:79-81) — matched, not invented
       vendor_id: merged.vendorId,
