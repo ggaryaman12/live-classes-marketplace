@@ -66,7 +66,7 @@ const YELO_BASE = "https://test-api-3025.jungleworks.com";
 const YELO_TENANT = {
   marketplace_user_id: 510009445,
   marketplace_reference_id: "7a57517ff024ea5715497555a297e86c",
-  domain_name: "deliverecttest.freelancer.jungleworks.me",
+  domain_name: "deliverecttest.devweb1.yelo.red",
   dual_user_key: 0,
   language: "en",
 };
