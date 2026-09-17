@@ -98,6 +98,16 @@ export default function HippoChatLauncher() {
                   language: d.language || 'en',
                   color: d.color || undefined,
                   tags: [`${d.form_name || 'Storefront'} Webapp`],
+                  // The widget draws its OWN floating bubble by default — a
+                  // real, reported bug: it landed bottom-right, overlapping
+                  // ProfileLink/MyCoursesLink, with a broken image icon of
+                  // its own. 'completeHide' is a real, confirmed option in
+                  // this exact script (widget-3002.js — every collapseType
+                  // branch checks for it) that keeps the widget fully
+                  // invisible until code calls `startConversation`, which is
+                  // exactly what the "Chat with us" button already does —
+                  // one trigger, not two competing ones.
+                  collapseType: 'completeHide',
                   callback: () => resolve(true),
                 });
                 // Some widget builds never fire `callback` when there's
