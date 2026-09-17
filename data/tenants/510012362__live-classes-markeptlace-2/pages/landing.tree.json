@@ -15,7 +15,8 @@
         "grid",
         "trust",
         "myCourses",
-        "profileLink"
+        "profileLink",
+        "chat"
       ]
     },
     "hero": {
@@ -86,6 +87,13 @@
       "type": "Custom",
       "props": {
         "component": "ProfileLink"
+      }
+    },
+    "chat": {
+      "id": "chat",
+      "type": "Custom",
+      "props": {
+        "component": "HippoChatLauncher"
       }
     }
   }
