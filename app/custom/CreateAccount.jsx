@@ -94,8 +94,15 @@ export default function CreateAccount({ onCreated }) {
         }),
       });
       const j = await res.json();
-      if (j?.status === 200 && (j.access_token || j.data?.access_token)) {
-        setSession(sessionFromLogin(j, { name, email, phone }));
+      // The real response is {status, message, data:{access_token,
+      // vendor_details,...}} — sessionFromLogin reads vendor_details/
+      // access_token off the object it's given directly, so it needs `j.data`,
+      // not the outer envelope. Passing `j` here was a real bug: every field
+      // it looks for came back undefined, so it fell through to `null`
+      // (guest) for vendorId/token and to the typed `name` fallback for
+      // display — a signed-up account that silently behaved like a guest.
+      if (j?.status === 200 && j?.data?.access_token) {
+        setSession(sessionFromLogin(j.data, { name, email, phone }));
         onCreated?.();
         return;
       }
