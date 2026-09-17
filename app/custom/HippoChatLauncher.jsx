@@ -25,14 +25,21 @@
  * token actually comes back rather than assuming one, so a tenant with chat
  * genuinely turned off correctly shows nothing.
  *
- * ONE HONEST GAP: the real client's only confirmed `startConversation(...)`
- * call is for chatting about a specific order (transaction_id, a store
- * name). There's no order context for a general "Help" click, so this sends
- * the call with none of those fields — the safest reading of the one real
- * shape found in source, not something verified against a live token (there
- * isn't one to test with yet).
+ * THE REAL BUG THIS FIXES: loading the script and calling
+ * `startConversation(...)` was never enough on its own — the actual client
+ * calls a SECOND, load-bearing step first: `window.fuguInit({appSecretKey:
+ * fugu_chat_token, ...})`, once, on app boot, whenever
+ * `config.is_fugu_chat_enabled` is true (app.component.ts:161-169 →
+ * set-external-lib.service.ts initFuguWidget():91-131). `startConversation`
+ * only does anything once `fuguInit` has already registered the widget with
+ * that token; calling it without `fuguInit` first is exactly why the button
+ * did nothing. This now does both: `fuguInit` once the config resolves, and
+ * `startConversation({})` on click to actually open the window — no order
+ * context (transaction_id/custom_label) since a general "Help" click has
+ * none, matching the one other confirmed call shape in source
+ * (set-external-lib.service.ts:198-227).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const YELO_BASE = 'https://test-api-3025.jungleworks.com';
 const YELO_TENANT = {
@@ -57,9 +64,9 @@ function loadHippoScript() {
 }
 
 export default function HippoChatLauncher() {
-  const [token, setToken] = useState(null);
-  const [botEnabled, setBotEnabled] = useState(true);
+  const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(false);
+  const initRef = useRef(null); // the fuguInit() promise, started at most once
 
   useEffect(() => {
     let cancelled = false;
@@ -71,9 +78,29 @@ export default function HippoChatLauncher() {
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;
-        if (j?.status === 200 && j?.data?.fugu_chat_token) {
-          setToken(j.data.fugu_chat_token);
-          setBotEnabled(!!j.data.is_fugu_bot_enabled);
+        const d = j?.data;
+        if (j?.status === 200 && d?.is_fugu_chat_enabled && d?.fugu_chat_token) {
+          setReady(true);
+          // Boot the widget now, same timing intent as the real client's
+          // app.component.ts — no reason to wait for a click when the config
+          // is already in hand, and startConversation needs this done first.
+          initRef.current = loadHippoScript().then(
+            () =>
+              new Promise((resolve) => {
+                if (typeof window.fuguInit !== 'function') return resolve(false);
+                window.fuguInit({
+                  appSecretKey: d.fugu_chat_token,
+                  alwaysSkipBot: !d.is_fugu_bot_enabled,
+                  language: d.language || 'en',
+                  color: d.color || undefined,
+                  tags: [`${d.form_name || 'Storefront'} Webapp`],
+                  callback: () => resolve(true),
+                });
+                // Some widget builds never fire `callback` when there's
+                // nothing to announce — don't hang the first click forever.
+                setTimeout(() => resolve(true), 4000);
+              })
+          );
         }
       })
       .catch(() => {});
@@ -83,22 +110,17 @@ export default function HippoChatLauncher() {
   async function open() {
     setOpening(true);
     try {
-      await loadHippoScript();
-      const obj = {};
-      if (!botEnabled) {
-        obj.skipBot = 1;
-        obj.skipBotReason = null;
-      }
+      if (initRef.current) await initRef.current;
       if (typeof window.startConversation === 'function') {
-        window.startConversation(obj);
+        window.startConversation({});
       }
     } catch {
-      /* script failed to load — nothing to open */
+      /* widget failed to load or init — nothing to open */
     }
     setOpening(false);
   }
 
-  if (!token) return null;
+  if (!ready) return null;
 
   return (
     <button type="button" className="hcl" onClick={open} disabled={opening} aria-label="Chat with support">
