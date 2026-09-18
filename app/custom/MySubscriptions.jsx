@@ -58,6 +58,7 @@ function courseState(r) {
     (!Number.isNaN(endTs) && endTs < Date.now());
   if (done) return { label: 'Complete', cls: 'complete' };
   if (Number(r.status) === 2) return { label: 'Declined', cls: 'declined' };
+  if (Number(r.is_paused) === 1) return { label: 'Paused', cls: 'paused' };
   return { label: 'In progress', cls: 'progress' };
 }
 
@@ -79,6 +80,27 @@ const yeloPost = (path, body) =>
     headers: { 'Content-Type': 'application/json', base_version: '1.0.0', device_type: 'WEB' },
     body: JSON.stringify(body),
   }).then((r) => r.json()).catch(() => ({ status: 0 }));
+
+// `recurring/updateRecurringRule` — real endpoint, real payload, verified
+// against this exact tenant (rule 820: called with is_paused:1, then
+// re-fetching the rule live confirmed `is_paused` really flipped to 1).
+// Unlike getRuleDetails/getRecurringRules/recurring/list, THIS call's
+// `user_id` is the real merchant/store id, not a required-but-unused
+// placeholder — every row from either list already carries its own real
+// store id as `user_id`, confirmed live to match the teacher it's with.
+const setRulePaused = (ruleId, storeUserId, isPaused, session) =>
+  yeloPost('recurring/updateRecurringRule', {
+    rule_id: ruleId,
+    is_paused: isPaused,
+    marketplace_user_id: String(YELO_TENANT.marketplace_user_id),
+    user_id: storeUserId,
+    vendor_id: String(session.vendorId),
+    access_token: session.token,
+    app_type: 'WEB',
+    domain_name: YELO_TENANT.domain_name,
+    dual_user_key: 0,
+    language: 'en',
+  });
 
 export default function MySubscriptions(props) {
   return (
@@ -222,40 +244,83 @@ function ListView({ session }) {
 
   return (
     <ul className="ms-grid">
-      {rules.map((r) => {
-       const cs = courseState(r);
-       return (
-        <li key={r.rule_id} className="ms-card">
-          <div className="ms-card-top">
-            <div className="ms-card-who">
-              {namesLoading ? (
-                <span className="ms-name-skel" aria-hidden="true" />
-              ) : (
-                <span className="ms-card-name">{names[r.user_id] || 'This teacher'}</span>
-              )}
-              <span className="ms-card-id">Recurring #{r.rule_id}</span>
-            </div>
-            <span className={`ms-badge ms-badge-${cs.cls}`}>{cs.label}</span>
-          </div>
-          <dl className="ms-card-facts">
-            <div><dt>Amount</dt><dd>₹{Number(r.amount || 0).toLocaleString()}</dd></div>
-            <div><dt>Starts</dt><dd>{fmtDate(r.start_schedule) || '—'}</dd></div>
-            <div>
-              <dt>{r.schedule_type === 2 ? 'Sessions' : 'Ends'}</dt>
-              <dd>{r.schedule_type === 2 ? `${r.remaining_occurrence_count}/${r.occurrence_count} left` : fmtDate(r.end_schedule) || '—'}</dd>
-            </div>
-          </dl>
-          <Link href={`?rule=${r.rule_id}`} className="ms-view">View details →</Link>
-        </li>
-       );
-      })}
+      {rules.map((r) => (
+        <SubscriptionCard
+          key={r.rule_id}
+          r={r}
+          name={names[r.user_id]}
+          namesLoading={namesLoading}
+          session={session}
+        />
+      ))}
     </ul>
+  );
+}
+
+function SubscriptionCard({ r, name, namesLoading, session }) {
+  // Local override so a pause/resume tapped right here updates this one card
+  // immediately, without re-fetching the whole list.
+  const [isPaused, setIsPaused] = useState(Number(r.is_paused) === 1);
+  const [pausing, setPausing] = useState(false);
+  const [pauseError, setPauseError] = useState('');
+  const cs = courseState({ ...r, is_paused: isPaused ? 1 : 0 });
+  const canToggle = cs.cls === 'progress' || cs.cls === 'paused';
+
+  async function togglePause() {
+    if (pausing) return;
+    const next = isPaused ? 0 : 1;
+    setPausing(true);
+    setPauseError('');
+    const res = await setRulePaused(r.rule_id, r.user_id, next, session);
+    setPausing(false);
+    if (res?.status === 200) setIsPaused(next === 1);
+    else setPauseError(res?.message || `Couldn't ${next ? 'pause' : 'resume'} — try again.`);
+  }
+
+  return (
+    <li className="ms-card">
+      <div className="ms-card-top">
+        <div className="ms-card-who">
+          {namesLoading ? (
+            <span className="ms-name-skel" aria-hidden="true" />
+          ) : (
+            <span className="ms-card-name">{name || 'This teacher'}</span>
+          )}
+          <span className="ms-card-id">Recurring #{r.rule_id}</span>
+        </div>
+        <span className={`ms-badge ms-badge-${cs.cls}`}>{cs.label}</span>
+      </div>
+      <dl className="ms-card-facts">
+        <div><dt>Amount</dt><dd>₹{Number(r.amount || 0).toLocaleString()}</dd></div>
+        <div><dt>Starts</dt><dd>{fmtDate(r.start_schedule) || '—'}</dd></div>
+        <div>
+          <dt>{r.schedule_type === 2 ? 'Sessions' : 'Ends'}</dt>
+          <dd>{r.schedule_type === 2 ? `${r.remaining_occurrence_count}/${r.occurrence_count} left` : fmtDate(r.end_schedule) || '—'}</dd>
+        </div>
+      </dl>
+      {pauseError && <p className="ms-pause-error">{pauseError}</p>}
+      <div className="ms-card-actions">
+        <Link href={`?rule=${r.rule_id}`} className="ms-view">View details →</Link>
+        {canToggle && (
+          <button
+            type="button"
+            className={`ms-card-pause${isPaused ? ' is-resume' : ''}`}
+            onClick={togglePause}
+            disabled={pausing}
+          >
+            {pausing ? (isPaused ? 'Resuming…' : 'Pausing…') : isPaused ? 'Resume' : 'Pause'}
+          </button>
+        )}
+      </div>
+    </li>
   );
 }
 
 function Detail({ ruleId, session }) {
   const [state, setState] = useState('loading'); // loading | ok | error
   const [rule, setRule] = useState(null);
+  const [pausing, setPausing] = useState(false);
+  const [pauseError, setPauseError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -273,6 +338,20 @@ function Detail({ ruleId, session }) {
     });
     return () => { cancelled = true; };
   }, [ruleId, session]);
+
+  async function togglePause() {
+    if (!rule || pausing) return;
+    const nextPaused = Number(rule.is_paused) === 1 ? 0 : 1;
+    setPausing(true);
+    setPauseError('');
+    const r = await setRulePaused(rule.rule_id, rule.user_id, nextPaused, session);
+    setPausing(false);
+    if (r?.status === 200) {
+      setRule((prev) => (prev ? { ...prev, is_paused: nextPaused } : prev));
+    } else {
+      setPauseError(r?.message || `Couldn't ${nextPaused ? 'pause' : 'resume'} this course — please try again.`);
+    }
+  }
 
   // The per-session schedule for this rule — split by the backend into
   // `upcoming` and `completed`. Verified live against this tenant:
@@ -347,6 +426,29 @@ function Detail({ ruleId, session }) {
         <div><dt>Payment</dt><dd>{rule.payment_type === 'CASH' ? 'Pay at the session' : rule.payment_type || '—'}</dd></div>
         <div><dt>Attendee</dt><dd>{rule.customer_username || '—'}</dd></div>
       </dl>
+
+      {(() => {
+        const cs = courseState(rule);
+        // Pausing/resuming a finished or declined course means nothing real
+        // — only offer it while the subscription is genuinely still active
+        // (running or already paused).
+        if (cs.cls !== 'progress' && cs.cls !== 'paused') return null;
+        const isPaused = cs.cls === 'paused';
+        return (
+          <div className="ms-pause-row">
+            <button
+              type="button"
+              className={`ms-pause-btn${isPaused ? ' is-resume' : ''}`}
+              onClick={togglePause}
+              disabled={pausing}
+            >
+              {pausing ? (isPaused ? 'Resuming…' : 'Pausing…') : isPaused ? 'Resume course' : 'Pause course'}
+            </button>
+            {isPaused && <p className="ms-pause-note">New sessions won't be scheduled while this course is paused.</p>}
+            {pauseError && <p className="ms-pause-error" role="alert">{pauseError}</p>}
+          </div>
+        );
+      })()}
 
       <SessionSchedule state={sesState} sessions={sessions} />
     </div>
@@ -487,6 +589,16 @@ const css = `
 .ms-card-facts dd{ margin:0; font-weight:600; font-size:.82rem; }
 .ms-view{ justify-self:start; color:var(--brand-accent); font-weight:650; font-size:.86rem; text-decoration:none; }
 .ms-view:hover{ text-decoration:underline; }
+.ms-card-actions{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.ms-card-pause{
+  padding:6px 14px; border-radius:980px; border:1px solid var(--brand-line);
+  background:var(--brand-paper); color:var(--brand-ink-soft); font:inherit; font-weight:650; font-size:.78rem; cursor:pointer;
+  transition:border-color var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease);
+}
+.ms-card-pause:hover{ border-color:color-mix(in srgb, var(--brand-ink) 40%, var(--brand-line)); color:var(--brand-ink); }
+.ms-card-pause.is-resume{ background:var(--brand-accent-soft); color:var(--brand-accent); border-color:transparent; }
+.ms-card-pause:disabled{ opacity:.6; cursor:default; }
+.ms-card-pause:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 
 .ms-badge{ padding:3px 10px; border-radius:980px; font-size:.7rem; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
 .ms-badge-progress{ background:var(--brand-accent-soft); color:var(--brand-accent); }
@@ -494,6 +606,22 @@ const css = `
 [data-theme="dark"] .ms-badge-complete{ color:#6fdb9c; }
 .ms-badge-declined{ background:color-mix(in srgb, #c0392b 16%, transparent); color:#a4322a; }
 [data-theme="dark"] .ms-badge-declined{ color:#ef8f86; }
+.ms-badge-paused{ background:color-mix(in srgb, var(--brand-ink-soft) 18%, transparent); color:var(--brand-ink-soft); }
+
+.ms-pause-row{ margin-top:16px; padding-top:16px; border-top:1px solid var(--brand-line); display:grid; gap:8px; justify-items:start; }
+.ms-pause-btn{
+  padding:10px 20px; border-radius:980px; border:1px solid var(--brand-line);
+  background:var(--brand-paper); color:var(--brand-ink); font:inherit; font-weight:650; font-size:.86rem; cursor:pointer;
+  transition:border-color var(--motion) var(--motion-ease), background var(--motion) var(--motion-ease);
+}
+.ms-pause-btn:hover{ border-color:color-mix(in srgb, var(--brand-ink) 40%, var(--brand-line)); }
+.ms-pause-btn.is-resume{ background:var(--brand-accent); color:var(--brand-accent-ink); border-color:var(--brand-accent); }
+.ms-pause-btn.is-resume:hover{ filter:brightness(1.06); }
+.ms-pause-btn:disabled{ opacity:.6; cursor:default; }
+.ms-pause-btn:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
+.ms-pause-note{ margin:0; font-size:.8rem; color:var(--brand-ink-soft); }
+.ms-pause-error{ margin:0; font-size:.82rem; color:#a4322a; }
+[data-theme="dark"] .ms-pause-error{ color:#ef8f86; }
 
 .ms-empty{ border:1px solid var(--brand-line); border-radius:var(--radius-lg); background:var(--brand-surface); padding:32px; text-align:center; display:grid; gap:8px; justify-items:center; }
 .ms-empty-t{ margin:0; font-weight:650; font-size:1rem; }
