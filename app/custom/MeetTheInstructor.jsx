@@ -4,13 +4,20 @@ import { useEffect, useState } from "react";
 
 /**
  * MeetTheInstructor — "Meet the instructor" on a teacher's page: a photo,
- * their name, and a short bio. Tries the real merchant profile call for
- * this teacher first (their id, read from the URL); if a real name/bio
- * comes back it's used as-is. Two live checks against this tenant's backend
- * (for user_id 510012595) both returned an empty profile, so this cannot
- * claim a specific real person's bio when nothing real is available —
- * the fallback is a clearly labelled SAMPLE bio with a generic placeholder
- * name, never presented as if it were the real teacher's story.
+ * their name, and a short bio.
+ *
+ * REAL DATA SOURCE, corrected: this used to call `merchant/viewProfile` for
+ * the teacher's id, which comes back empty for every store on this tenant —
+ * verified live, repeatedly. The real bio lives one call over, on
+ * `marketplace_get_city_storefronts_single_v2` (the same real, working
+ * store-lookup StoreHeader's `bind.source:"store"` already uses, and the one
+ * this build already relies on elsewhere for a working `currency_id`) —
+ * confirmed live for store 510013303 ("Harkirat"): a real, substantial
+ * `description` ("Harkirat is a public speaking and communication expert
+ * with 15 years of experience…") sitting right next to `store_name` and
+ * `logo`. So this now shows the REAL store name + real description whenever
+ * a real description exists, and only falls back to the fully-sample
+ * name+bio (clearly tagged) when a store genuinely has none set.
  *
  * Self-contained: no cross-file imports (see LiveCatalogue.jsx for why).
  */
@@ -52,22 +59,31 @@ export default function MeetTheInstructor({
         return;
       }
       try {
-        const res = await fetch(`${YELO_BASE}/merchant/viewProfile`, {
+        const res = await fetch(`${YELO_BASE}/marketplace_get_city_storefronts_single_v2`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             base_version: "1.0.0",
             device_type: "WEB",
           },
-          body: JSON.stringify({ ...YELO_TENANT, user_id: storeId }),
+          body: JSON.stringify({
+            ...YELO_TENANT,
+            language: "en",
+            user_id: storeId,
+            latitude: 28.61482,
+            longitude: 77.219989,
+          }),
         });
         const json = await res.json();
-        const data = json?.status === 200 ? json?.data : null;
+        const raw = json?.status === 200 ? json?.data : null;
+        const data = Array.isArray(raw) ? raw[0] : raw;
         if (cancelled) return;
-        if (data && data.display_name && data.description) {
+        // The real bar is a real DESCRIPTION — `store_name` alone is present
+        // for every store and isn't a "bio" on its own.
+        if (data && data.description && data.description.trim()) {
           setProfile({
-            name: data.display_name,
-            bio: data.description,
+            name: data.store_name || SAMPLE_BIO.name,
+            bio: data.description.trim(),
             photo: data.logo || data.banner_image || "",
           });
           setState("real");
