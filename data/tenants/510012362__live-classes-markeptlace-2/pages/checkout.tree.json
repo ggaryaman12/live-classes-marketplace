@@ -1,99 +1,56 @@
 {
   "schema": "yelo.tree/1",
-  "page": "landing",
-  "root": "page",
+  "page": "checkout",
+  "root": "p1",
   "nodes": {
-    "page": {
-      "id": "page",
+    "p1": {
+      "id": "p1",
       "type": "Page",
       "props": {},
       "children": [
-        "hero",
-        "subjects",
-        "how",
-        "teachersLede",
-        "grid",
-        "trust",
-        "myCourses",
-        "profileLink",
-        "chat"
+        "enroll",
+        "schedule",
+        "recurringSummary",
+        "checkout1"
       ]
     },
-    "hero": {
-      "id": "hero",
+    "enroll": {
+      "id": "enroll",
       "type": "Custom",
       "props": {
-        "component": "BellHero",
-        "eyebrow": "Live online classes for curious kids",
-        "searchPlaceholder": "Try “chess”, “creative writing”, “fractions”…",
-        "browseHref": "/stores"
+        "component": "EnrollHeader",
+        "eyebrow": "Confirm your subscription"
       }
     },
-    "subjects": {
-      "id": "subjects",
+    "schedule": {
+      "id": "schedule",
       "type": "Custom",
       "props": {
-        "component": "SubjectTiles",
-        "heading": "Browse by category",
-        "subhead": "What this teacher network actually offers right now, pulled live from the marketplace.",
-        "browseHref": "/stores"
+        "component": "SubscribeScheduler"
       }
     },
-    "how": {
-      "id": "how",
+    "recurringSummary": {
+      "id": "recurringSummary",
       "type": "Custom",
       "props": {
-        "component": "HowLiveWorks",
-        "heading": "How a live class works IN LIVE"
+        "component": "RecurringSummary",
+        "heading": "Your schedule"
       }
     },
-    "teachersLede": {
-      "id": "teachersLede",
+    "checkout1": {
+      "id": "checkout1",
       "type": "Custom",
       "props": {
-        "component": "TeacherEditorial",
-        "eyebrow": "Who's teaching",
-        "statement": "The people your kid will actually meet — not a logo, not a bot. Real teachers, running small rooms they've built themselves."
-      }
-    },
-    "grid": {
-      "id": "grid",
-      "type": "Custom",
-      "props": {
-        "component": "TeacherDirectory",
-        "heading": "Teachers with classes open now",
-        "columns": 3
-      }
-    },
-    "trust": {
-      "id": "trust",
-      "type": "Custom",
-      "props": {
-        "component": "TrustStrip",
-        "heading": "Enough to feel good about handing over the tablet",
-        "browseHref": "/stores",
-        "classHref": "/p/class"
-      }
-    },
-    "myCourses": {
-      "id": "myCourses",
-      "type": "Custom",
-      "props": {
-        "component": "MyCoursesLink"
-      }
-    },
-    "profileLink": {
-      "id": "profileLink",
-      "type": "Custom",
-      "props": {
-        "component": "ProfileLink"
-      }
-    },
-    "chat": {
-      "id": "chat",
-      "type": "Custom",
-      "props": {
-        "component": "HippoChatLauncher"
+        "component": "ClassCheckout",
+        "title": "Confirm & pay",
+        "paymentLabel": "How you’ll pay",
+        "summaryLabel": "Your enrollment",
+        "ctaLabel": "Confirm & enroll",
+        "allowCash": false,
+        "allowWallet": false
+      },
+      "bind": {
+        "source": "get_bill_breakdown"
       }
     }
   }
