@@ -109,6 +109,21 @@ function categoriesWithProducts(categories) {
 
 const isLive = (p) => p.is_enabled === 1 && p.is_deleted !== 1;
 
+// `get_products_for_category` doesn't carry min_age/max_age as fields at all
+// (verified live: not even present-but-null, the keys simply aren't in the
+// response) — but every one of this tenant's real class names already
+// spells out its age band as text, e.g. "Maths (Age 5-10)". Rather than
+// leave that sitting unstyled in the title, or invent a field that doesn't
+// exist, this reads the REAL age range straight out of the REAL name and
+// gives it its own badge — same visual language as ClassSearch.jsx's
+// `.cs-age-badge`, which shows the same information where the backend does
+// carry it as a real field. A name with no age range shows no badge, never
+// a guessed one.
+function parseAgeFromName(name) {
+  const m = /\(\s*age\s+(\d+)\s*[-–]\s*(\d+)\s*\)/i.exec(name || "");
+  return m ? `Age ${m[1]}-${m[2]}` : null;
+}
+
 function currentStoreId() {
   if (typeof window === "undefined") return null;
   const m = window.location.pathname.match(/\/store\/(\d+)/);
@@ -252,6 +267,7 @@ function ProductCard({ p }) {
   const src = p.image_url || `https://source.unsplash.com/480x360/?${term}`;
   const fallback = `https://picsum.photos/seed/product-${p.product_id}/480/360`;
   const detailHref = `/p/class?id=${p.product_id}`;
+  const ageLabel = parseAgeFromName(p.name);
   return (
     <li className="lc-card">
       <Link href={detailHref} className="lc-media">
@@ -265,6 +281,7 @@ function ProductCard({ p }) {
             if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
           }}
         />
+        {ageLabel && <span className="lc-age-badge">{ageLabel}</span>}
       </Link>
       <div className="lc-body">
         <Link href={detailHref} className="lc-title-link">
@@ -310,7 +327,14 @@ const css = `
 @media (min-width:900px){ .lc-grid{ grid-template-columns:repeat(3,1fr); } }
 
 .lc-card{ border:1px solid var(--brand-line); border-radius:var(--radius-lg); background:var(--brand-surface); overflow:hidden; box-shadow:0 1px 2px color-mix(in srgb, var(--brand-ink) 8%, transparent); }
-.lc-media{ display:block; aspect-ratio:4/3; overflow:hidden; background:var(--brand-accent-soft); }
+.lc-media{ position:relative; display:block; aspect-ratio:4/3; overflow:hidden; background:var(--brand-accent-soft); }
+.lc-age-badge{
+  position:absolute; left:10px; top:10px;
+  background:var(--brand-surface); color:var(--brand-ink);
+  border:1px solid var(--brand-line); border-radius:980px;
+  font-size:.72rem; font-weight:600; padding:4px 10px;
+  box-shadow:0 1px 3px color-mix(in srgb, var(--brand-ink) 15%, transparent);
+}
 .lc-media img{ width:100%; height:100%; object-fit:cover; display:block; }
 .lc-body{ padding:14px 15px 15px; display:grid; gap:6px; }
 .lc-title-link{ text-decoration:none; color:inherit; }
