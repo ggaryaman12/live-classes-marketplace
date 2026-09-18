@@ -52,7 +52,7 @@ function currentStoreId() {
 export default function MeetTheInstructor({
   heading = "Meet the instructor",
   backLabel = "← All teachers",
-  browseHref = "/stores",
+  browseHref = "/",
 }) {
   const [state, setState] = useState("loading"); // loading | real | sample
   const [profile, setProfile] = useState(null);
