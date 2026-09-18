@@ -397,19 +397,22 @@ function Detail({ ruleId, session }) {
   }, [ruleId, session]);
 
   // Skip one upcoming session — real endpoint, real payload (see
-  // addVacationDates above). Sends just that one date; the backend accepts
-  // an array, but nothing here batches multiple dates in one request.
+  // addVacationDates above).
   //
-  // THE REAL "ALREADY-SKIPPED STAYS SKIPPED" BUG, confirmed in
-  // yelo-server's own source (recurringController.js addVacationRule:
-  // 1044-1074): this endpoint TOGGLES a date — call it again for a date
-  // that's already skipped and the backend REMOVES it from the skip list
-  // instead of leaving it skipped. The UI already hides the Skip button once
-  // a row shows is_skipped, but that's local state, which can be stale for a
-  // moment right after another action resolves — so this also checks the
-  // latest known session list before ever sending the call, and simply does
-  // nothing if that date is already marked skipped, rather than trusting the
-  // button having been hidden to be enough on its own.
+  // THE REAL BUG, fully traced this time in yelo-server's own source
+  // (recurringController.js addVacationRule:1006-1093) — `vacation_dates`
+  // is NOT "add these dates to the skip list". It's a full REPLACE: the
+  // handler loads every date CURRENTLY skipped for this rule, then for each
+  // date in the array you just sent, removes it from that "currently
+  // skipped" set if it's already there (so re-sending an already-skipped
+  // date correctly leaves it alone) — but ANYTHING LEFT in that set once the
+  // loop is done (i.e. every date that WAS skipped but wasn't in the array
+  // you just sent) gets UN-SKIPPED. Sending only the one new date, like this
+  // used to, told the backend "the complete set of skipped dates is just
+  // this one" — which is exactly why skipping a new session un-skipped every
+  // other one already skipped. The fix is to always send the FULL set: every
+  // date already skipped (upcoming or completed) plus the new one, never
+  // just the new one alone.
   const [skippingDate, setSkippingDate] = useState(null);
   const [skipError, setSkipError] = useState('');
 
@@ -417,9 +420,13 @@ function Detail({ ruleId, session }) {
     if (!rule || skippingDate || pausing) return;
     const already = sessions.upcoming.find((s) => s.date === date)?.is_skipped;
     if (already) return;
+    const existingSkipped = [...sessions.upcoming, ...sessions.completed]
+      .filter((s) => s.is_skipped)
+      .map((s) => s.date);
+    const fullSkipSet = [...new Set([...existingSkipped, date])];
     setSkippingDate(date);
     setSkipError('');
-    const r = await addVacationDates(rule.rule_id, rule.user_id, [date], session);
+    const r = await addVacationDates(rule.rule_id, rule.user_id, fullSkipSet, session);
     if (r?.status === 200) {
       setSessions((prev) => ({
         ...prev,
