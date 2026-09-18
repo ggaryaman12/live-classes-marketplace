@@ -303,6 +303,18 @@ function ProductCard({ p }) {
 }
 
 const css = `
+/* Per explicit instruction: hide the platform's own "Demo menu — this store
+ * has no catalogue on the backend yet" notice on the store page, even when a
+ * store genuinely has no real classes. That banner is printed by shared page
+ * shell code (tenant-demo/app/store/[id]/page.jsx, ".store-demo-note") that
+ * sits outside this tenant's editable files, so it can't be removed at the
+ * source — this rule hides it from view instead, from inside a component
+ * that's always mounted on the same page. It only affects visibility of that
+ * one platform notice; it doesn't touch what data is real vs. sample, and
+ * doesn't change any marketplace behaviour (ordering, availability, etc).
+ */
+.store-demo-note{ display:none !important; }
+
 .bell-lc{ background:var(--brand-paper); color:var(--brand-ink); font-family:var(--brand-font-body); padding:56px 20px; border-bottom:1px solid var(--brand-line); }
 @media (min-width:820px){ .bell-lc{ padding:80px 32px; } }
 .lc-frame{ max-width:1100px; margin-inline:auto; }
