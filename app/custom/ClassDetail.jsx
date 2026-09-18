@@ -105,7 +105,7 @@ const SESSIONS = [
 ];
 
 const DAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-const TABS = ["Description", "Learning goals", "Class details", "Reviews"];
+const TABS = ["Description", "Learning goals", "Class details"];
 
 function generateMeetings(session) {
   const start = new Date(`${session.startDate}T00:00:00`);
@@ -345,16 +345,8 @@ function ClassDetailInner({
                   <ul className="cd-goals">
                     <li>Taught by {cls.teacher}</li>
                     <li>₹{cls.price.toLocaleString()} per session</li>
-                    <li>See Available times below for sample scheduling — real session times are on their way</li>
                   </ul>
                 )
-              )}
-              {tab === "Reviews" && (
-                <p className="cd-placeholder">
-                  Review writing is arriving in a later pass — only parents with a
-                  completed first meeting will be able to leave one, one per
-                  enrollment.
-                </p>
               )}
             </div>
 
