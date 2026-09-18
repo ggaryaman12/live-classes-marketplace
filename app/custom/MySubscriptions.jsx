@@ -102,6 +102,26 @@ const setRulePaused = (ruleId, storeUserId, isPaused, session) =>
     language: 'en',
   });
 
+// `recurring/addVacationRule` — real endpoint, real payload given straight
+// from a working curl against this tenant (rule 820, vacation_dates for
+// 2026-09-18/19/20 — the exact three dates that now show "Skipped" on that
+// rule's real schedule, confirmed live). One real difference from
+// updateRecurringRule's shape worth keeping exact rather than "normalizing":
+// `vendor_id` travels as a NUMBER here, not a string.
+const addVacationDates = (ruleId, storeUserId, dates, session) =>
+  yeloPost('recurring/addVacationRule', {
+    rule_id: ruleId,
+    marketplace_user_id: String(YELO_TENANT.marketplace_user_id),
+    user_id: storeUserId,
+    vacation_dates: dates,
+    app_type: 'WEB',
+    vendor_id: session.vendorId,
+    access_token: session.token,
+    domain_name: YELO_TENANT.domain_name,
+    dual_user_key: 0,
+    language: 'en',
+  });
+
 export default function MySubscriptions(props) {
   return (
     <Suspense fallback={null}>
@@ -360,6 +380,28 @@ function Detail({ ruleId, session }) {
     return () => { cancelled = true; };
   }, [ruleId, session]);
 
+  // Skip one upcoming session — real endpoint, real payload (see
+  // addVacationDates above). Sends just that one date; the backend accepts
+  // an array, but nothing here batches multiple dates in one request.
+  const [skippingDate, setSkippingDate] = useState(null);
+  const [skipError, setSkipError] = useState('');
+
+  async function skipSession(date) {
+    if (!rule || skippingDate) return;
+    setSkippingDate(date);
+    setSkipError('');
+    const r = await addVacationDates(rule.rule_id, rule.user_id, [date], session);
+    setSkippingDate(null);
+    if (r?.status === 200) {
+      setSessions((prev) => ({
+        ...prev,
+        upcoming: prev.upcoming.map((s) => (s.date === date ? { ...s, is_skipped: 1 } : s)),
+      }));
+    } else {
+      setSkipError(r?.message || "Couldn't skip that session — please try again.");
+    }
+  }
+
   if (state === 'loading') {
     return (
       <div className="ms-detail" aria-busy="true">
@@ -422,12 +464,18 @@ function Detail({ ruleId, session }) {
         );
       })()}
 
-      <SessionSchedule state={sesState} sessions={sessions} />
+      <SessionSchedule
+        state={sesState}
+        sessions={sessions}
+        onSkip={skipSession}
+        skippingDate={skippingDate}
+        skipError={skipError}
+      />
     </div>
   );
 }
 
-function SessionSchedule({ state, sessions }) {
+function SessionSchedule({ state, sessions, onSkip, skippingDate, skipError }) {
   const [tab, setTab] = useState('upcoming'); // upcoming | completed
 
   if (state === 'loading') {
@@ -488,12 +536,19 @@ function SessionSchedule({ state, sessions }) {
         aria-labelledby={tab === 'upcoming' ? 'ms-tab-upcoming' : 'ms-tab-completed'}
         className="ms-tabpanel"
       >
+        {tab === 'upcoming' && skipError && <p className="ms-skip-error" role="alert">{skipError}</p>}
         {rows.length === 0 ? (
           <p className="ms-sgroup-empty">{emptyText}</p>
         ) : (
           <ol className={`ms-slist ms-slist-${tab}`}>
             {rows.map((s, i) => (
-              <SessionRow key={`${s.session}-${s.date}-${i}`} s={s} kind={tab} />
+              <SessionRow
+                key={`${s.session}-${s.date}-${i}`}
+                s={s}
+                kind={tab}
+                onSkip={onSkip}
+                skipping={skippingDate === s.date}
+              />
             ))}
           </ol>
         )}
@@ -502,7 +557,7 @@ function SessionSchedule({ state, sessions }) {
   );
 }
 
-function SessionRow({ s, kind }) {
+function SessionRow({ s, kind, onSkip, skipping }) {
   const time = fmtTime(s.start_time);
   const end = fmtTime(s.end_time);
   const skipped = !!s.is_skipped;
@@ -520,18 +575,32 @@ function SessionRow({ s, kind }) {
       </span>
 
       {isUpcoming ? (
-        skipped ? (
-          <span className="ms-slink ms-slink-skipped">Skipped</span>
-        ) : s.meeting_link ? (
-          <a className="ms-slink ms-slink-join" href={s.meeting_link} target="_blank" rel="noreferrer">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h5A1.5 1.5 0 0 1 10 4.5V6l3-1.8v7.6L10 10v1.5A1.5 1.5 0 0 1 8.5 13h-5A1.5 1.5 0 0 1 2 11.5z" fill="currentColor"/></svg>
-            Join class
-          </a>
-        ) : (
-          <span className="ms-slink ms-slink-wait" title="The teacher hasn't shared the meeting link for this session yet.">
-            Link not shared yet
-          </span>
-        )
+        <span className="ms-srow-actions">
+          {skipped ? (
+            <span className="ms-slink ms-slink-skipped">Skipped</span>
+          ) : (
+            <>
+              {s.meeting_link ? (
+                <a className="ms-slink ms-slink-join" href={s.meeting_link} target="_blank" rel="noreferrer">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h5A1.5 1.5 0 0 1 10 4.5V6l3-1.8v7.6L10 10v1.5A1.5 1.5 0 0 1 8.5 13h-5A1.5 1.5 0 0 1 2 11.5z" fill="currentColor"/></svg>
+                  Join class
+                </a>
+              ) : (
+                <span className="ms-slink ms-slink-wait" title="The teacher hasn't shared the meeting link for this session yet.">
+                  Link not shared yet
+                </span>
+              )}
+              <button
+                type="button"
+                className="ms-skip-btn"
+                onClick={() => onSkip?.(s.date)}
+                disabled={skipping}
+              >
+                {skipping ? 'Skipping…' : 'Skip'}
+              </button>
+            </>
+          )}
+        </span>
       ) : (
         <span className="ms-slink ms-slink-done" aria-label="Class completed">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -640,10 +709,22 @@ const css = `
 .ms-slink-skipped{ background:transparent; border:1px solid var(--brand-line); color:var(--brand-ink-soft); }
 .ms-slink-done{ background:transparent; color:var(--brand-ink-soft); padding-inline:6px; }
 
+.ms-srow-actions{ flex:none; display:flex; align-items:center; gap:8px; }
+.ms-skip-btn{
+  flex:none; padding:7px 13px; border-radius:980px; border:1px solid var(--brand-line);
+  background:transparent; color:var(--brand-ink-soft); font:inherit; font-weight:650; font-size:.78rem; cursor:pointer;
+  transition:border-color var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease);
+}
+.ms-skip-btn:hover{ border-color:color-mix(in srgb, var(--brand-ink) 40%, var(--brand-line)); color:var(--brand-ink); }
+.ms-skip-btn:disabled{ opacity:.6; cursor:default; }
+.ms-skip-btn:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
+.ms-skip-error{ margin:0 0 4px; font-size:.82rem; color:#a4322a; }
+[data-theme="dark"] .ms-skip-error{ color:#ef8f86; }
+
 @media (max-width:520px){
   .ms-srow{ flex-wrap:wrap; }
   .ms-sbody{ flex-basis:calc(100% - 50px); }
-  .ms-slink{ margin-left:50px; }
+  .ms-srow-actions{ margin-left:50px; }
 }
 @media (prefers-reduced-motion: reduce){ .ms-tab{ transition:none; } }
 `;
