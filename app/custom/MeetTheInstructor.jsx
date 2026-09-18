@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 /**
  * MeetTheInstructor — "Meet the instructor" on a teacher's page: a photo,
@@ -19,7 +20,12 @@ import { useEffect, useState } from "react";
  * a real description exists, and only falls back to the fully-sample
  * name+bio (clearly tagged) when a store genuinely has none set.
  *
- * Self-contained: no cross-file imports (see LiveCatalogue.jsx for why).
+ * Self-contained: no cross-file component imports (see LiveCatalogue.jsx for
+ * why) — `next/link` is a framework import, not a local one, so it's fine.
+ *
+ * Carries its own "← All teachers" back link now too: the store page's
+ * StoreHeader section (the only other place that link lived) was removed
+ * per instruction, and this became the first section on the page.
  */
 
 const YELO_BASE = "https://test-api-3025.jungleworks.com";
@@ -45,6 +51,8 @@ function currentStoreId() {
 
 export default function MeetTheInstructor({
   heading = "Meet the instructor",
+  backLabel = "← All teachers",
+  browseHref = "/stores",
 }) {
   const [state, setState] = useState("loading"); // loading | real | sample
   const [profile, setProfile] = useState(null);
@@ -107,6 +115,7 @@ export default function MeetTheInstructor({
   return (
     <section className="bell-mti" aria-labelledby="bell-mti-h">
       <div className="mti-frame">
+        <Link href={browseHref} className="mti-back">{backLabel}</Link>
         <div className="mti-head">
           <h2 id="bell-mti-h">{heading}</h2>
           {state === "sample" && <span className="mti-sample-tag">Sample bio — for layout</span>}
@@ -150,6 +159,8 @@ const css = `
 .bell-mti{ background:var(--brand-paper); color:var(--brand-ink); font-family:var(--brand-font-body); padding:56px 20px; border-bottom:1px solid var(--brand-line); }
 @media (min-width:820px){ .bell-mti{ padding:80px 32px; } }
 .mti-frame{ max-width:1100px; margin-inline:auto; }
+.mti-back{ display:inline-block; margin-bottom:18px; color:var(--brand-accent); font-weight:650; font-size:.88rem; text-decoration:none; }
+.mti-back:hover{ text-decoration:underline; }
 .mti-head{ display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; justify-content:space-between; margin-bottom:22px; }
 .mti-head h2{ font-family:var(--brand-font-display); font-weight:600; letter-spacing:-.01em; font-size:clamp(1.4rem,3.4vw,1.9rem); margin:0; }
 .mti-sample-tag{ padding:5px 12px; border-radius:980px; border:1px solid var(--brand-line); background:var(--brand-surface); color:var(--brand-ink-soft); font-size:11.5px; font-weight:700; }
