@@ -1,74 +1,78 @@
 {
   "schema": "yelo.tree/1",
-  "page": "store",
-  "root": "p1",
+  "page": "landing",
+  "root": "page",
   "nodes": {
-    "p1": {
-      "id": "p1",
+    "page": {
+      "id": "page",
       "type": "Page",
       "props": {},
       "children": [
-        "meetInstructor",
-        "approach",
-        "cat1",
-        "reviews",
-        "faq",
+        "hero",
+        "subjects",
+        "how",
+        "teachersLede",
+        "grid",
         "trust",
         "myCourses",
         "profileLink",
         "chat"
       ]
     },
-    "meetInstructor": {
-      "id": "meetInstructor",
+    "hero": {
+      "id": "hero",
       "type": "Custom",
       "props": {
-        "component": "MeetTheInstructor",
-        "heading": "Meet the instructor",
-        "backLabel": "← All teachers",
-        "browseHref": "/"
+        "component": "BellHero",
+        "eyebrow": "Live online classes for curious kids",
+        "searchPlaceholder": "Try “chess”, “creative writing”, “fractions”…",
+        "browseHref": "/stores"
       }
     },
-    "approach": {
-      "id": "approach",
+    "subjects": {
+      "id": "subjects",
       "type": "Custom",
       "props": {
-        "component": "TeacherApproach",
-        "eyebrow": "How a class runs",
-        "statement": "Live means a real teacher, a set time each week, and a room small enough that your child is seen."
+        "component": "SubjectTiles",
+        "heading": "Browse by category",
+        "subhead": "What this teacher network actually offers right now, pulled live from the marketplace.",
+        "browseHref": "/stores"
       }
     },
-    "cat1": {
-      "id": "cat1",
+    "how": {
+      "id": "how",
       "type": "Custom",
       "props": {
-        "component": "LiveCatalogue",
-        "heading": "Classes with this teacher"
+        "component": "HowLiveWorks",
+        "heading": "How a live class works IN LIVE"
       }
     },
-    "reviews": {
-      "id": "reviews",
+    "teachersLede": {
+      "id": "teachersLede",
       "type": "Custom",
       "props": {
-        "component": "WhatParentsSay",
-        "heading": "What families say"
+        "component": "TeacherEditorial",
+        "eyebrow": "Who's teaching",
+        "statement": "The people your kid will actually meet — not a logo, not a bot. Real teachers, running small rooms they've built themselves."
       }
     },
-    "faq": {
-      "id": "faq",
+    "grid": {
+      "id": "grid",
       "type": "Custom",
       "props": {
-        "component": "TeacherFAQ",
-        "heading": "Questions parents ask"
+        "component": "TeacherDirectory",
+        "heading": "Teachers with classes open now",
+        "columns": 3
       }
     },
     "trust": {
       "id": "trust",
       "type": "Custom",
       "props": {
-        "component": "TeacherTrust",
-        "heading": "Enrolling with this teacher",
-        "browseHref": "/stores"
+        "component": "TrustStrip",
+        "heading": "Enough to feel good about handing over the tablet",
+        "browseHref": "/stores",
+        "classHref": "/p/class"
       }
     },
     "myCourses": {
