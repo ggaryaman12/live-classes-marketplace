@@ -105,7 +105,7 @@ const SESSIONS = [
 ];
 
 const DAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-const TABS = ["Description", "Learning goals", "Class details"];
+const TABS = ["Description", "Available times", "Class details"];
 
 function generateMeetings(session) {
   const start = new Date(`${session.startDate}T00:00:00`);
@@ -325,7 +325,7 @@ function ClassDetailInner({
                   {cls.desc || "No description added for this class yet."}
                 </p>
               )}
-              {tab === "Learning goals" && (
+              {tab === "Available times" && (
                 <div className="cd-times" id="available-times">
                   <div className="cd-times-head">
                     <h2>Available times <span>({SESSIONS.length} available)</span></h2>
@@ -392,7 +392,7 @@ function ClassDetailInner({
                   <ul className="cd-goals">
                     <li>{cls.group}, ages {cls.age[0]}–{cls.age[1]}</li>
                     <li>Live video meetings, {SESSIONS[0].len} minutes each</li>
-                    <li>New sessions start most weeks — see the Learning goals tab for Available times</li>
+                    <li>New sessions start most weeks — see the Available times tab</li>
                   </ul>
                 ) : (
                   <ul className="cd-goals">
@@ -470,7 +470,7 @@ function ClassDetailInner({
                   type="button"
                   className="cd-side-cta"
                   onClick={() => {
-                    setTab("Learning goals");
+                    setTab("Available times");
                     document.getElementById("available-times")?.scrollIntoView({ behavior: "smooth" });
                   }}
                 >
@@ -492,7 +492,7 @@ function ClassDetailInner({
           <button
             type="button"
             onClick={() => {
-              setTab("Learning goals");
+              setTab("Available times");
               document.getElementById("available-times")?.scrollIntoView({ behavior: "smooth" });
             }}
           >
