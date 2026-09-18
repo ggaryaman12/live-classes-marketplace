@@ -238,7 +238,9 @@ function ClassCheckoutInner({
   const [billing, setBilling] = useState(false);
   const [billFailed, setBillFailed] = useState(false);
   const [wallet, setWallet] = useState({ balance: 0, enabled: false });
-  const [pay, setPay] = useState(PAYMENT.CASH);
+  const [pay, setPay] = useState(
+    allowCash ? PAYMENT.CASH : allowRazorpay ? RAZORPAY : PAYMENT.WALLET
+  );
   const [contact, setContact] = useState({ name: '', phone: '', email: '' });
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced] = useState(null);
@@ -982,14 +984,6 @@ function ClassCheckoutInner({
       <h1 className="ck-title">{title}</h1>
       <div className="ck-grid">
         <div className="ck-left">
-          <section className="ck-card ck-online-note">
-            <div className="ck-card-h">This is a live online class</div>
-            <p className="ck-online-copy">
-              No delivery or pickup — your child joins from any device with a
-              link we’ll send you. Just tell us who’s attending.
-            </p>
-          </section>
-
           <section className="ck-card">
             <div className="ck-card-h">Who’s attending</div>
             <input className={`ck-in${bad('name')}`} value={contact.name} placeholder="Parent or student name"
@@ -1183,9 +1177,6 @@ const css = `
 .ck-left{ gap:14px; }
 .ck-card{ padding:20px; }
 .ck-card-h{ margin-bottom:14px; }
-
-.ck-online-note{ background:var(--brand-accent-soft); border-color:color-mix(in srgb, var(--brand-accent) 24%, var(--brand-line)); }
-.ck-online-copy{ margin:6px 0 0; color:var(--brand-ink-soft); font-size:.88rem; line-height:1.5; }
 
 .ck-summary .ck-card-h{ font-size:15.5px; }
 .ck-sched-wrap{ margin:12px 0; padding:12px 0; border-top:1px solid var(--line, var(--brand-line)); border-bottom:1px solid var(--line, var(--brand-line)); }
