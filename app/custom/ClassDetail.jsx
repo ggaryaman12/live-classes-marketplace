@@ -326,20 +326,73 @@ function ClassDetailInner({
                 </p>
               )}
               {tab === "Learning goals" && (
-                cls.isSample ? (
-                  <ul className="cd-goals">
-                    {cls.goals.map((g) => <li key={g}>{g}</li>)}
+                <div className="cd-times" id="available-times">
+                  <div className="cd-times-head">
+                    <h2>Available times <span>({SESSIONS.length} available)</span></h2>
+                    <span className="cd-tz-chip">🌐 {tz}</span>
+                  </div>
+                  <p className="cd-times-note">Sample sessions — real per-class scheduling is on its way.</p>
+
+                  <ul className="cd-sessions">
+                    {SESSIONS.map((s) => {
+                      const meetings = meetingsBySession[s.id] || [];
+                      const seatsLeft = s.seatsTotal - s.seatsFilled;
+                      const full = seatsLeft <= 0;
+                      const low = !full && seatsLeft <= 2;
+                      const open = !!expanded[s.id];
+                      const first = meetings[0];
+                      const last = meetings[meetings.length - 1];
+                      return (
+                        <li key={s.id} className="cd-session">
+                          <div className="cd-session-when">
+                            <p className="cd-session-days">{s.days.join(", ")}</p>
+                            <p className="cd-session-time">
+                              {first ? fmtDate(first) : ""}, {fmtTime(s.time, s.len)}
+                            </p>
+                          </div>
+                          <div className="cd-session-status">
+                            <p><span aria-hidden="true">⏳</span> Started {first ? fmtDate(first) : "—"}</p>
+                            <p>Ends {last ? fmtDate(last) : "—"}</p>
+                            <button
+                              type="button"
+                              className="cd-show-more"
+                              onClick={() => setExpanded((e) => ({ ...e, [s.id]: !e[s.id] }))}
+                              aria-expanded={open}
+                            >
+                              {open ? "Hide" : "Show"} remaining {Math.max(0, meetings.length - 1)} meetings
+                            </button>
+                            {open && (
+                              <ul className="cd-meeting-list">
+                                {meetings.slice(1).map((m, i) => (
+                                  <li key={i}>{m.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                          <div className="cd-session-seats">
+                            <p>{s.seatsFilled} seat{s.seatsFilled === 1 ? "" : "s"} filled</p>
+                            {low && <p className="cd-seats-low">Only {seatsLeft} seat{seatsLeft === 1 ? "" : "s"} left!</p>}
+                            {full && <p className="cd-seats-low">Full — join the waitlist</p>}
+                          </div>
+                          <Link
+                            href={enrollHref(s.id)}
+                            className="cd-join"
+                            data-full={full}
+                          >
+                            {full ? "Join waitlist" : "Enroll — Week 1"}
+                          </Link>
+                        </li>
+                      );
+                    })}
                   </ul>
-                ) : (
-                  <p className="cd-placeholder">This teacher hasn't listed specific learning goals for this class yet.</p>
-                )
+                </div>
               )}
               {tab === "Class details" && (
                 cls.isSample ? (
                   <ul className="cd-goals">
                     <li>{cls.group}, ages {cls.age[0]}–{cls.age[1]}</li>
                     <li>Live video meetings, {SESSIONS[0].len} minutes each</li>
-                    <li>New sessions start most weeks — see Available times below</li>
+                    <li>New sessions start most weeks — see the Learning goals tab for Available times</li>
                   </ul>
                 ) : (
                   <ul className="cd-goals">
@@ -387,79 +440,11 @@ function ClassDetailInner({
                 )}
               </>
             )}
-
-            <div className="cd-times" id="available-times">
-              <div className="cd-times-head">
-                <h2>Available times <span>({SESSIONS.length} available)</span></h2>
-                <span className="cd-tz-chip">🌐 {tz}</span>
-              </div>
-              <p className="cd-times-note">Sample sessions — real per-class scheduling is on its way.</p>
-
-              <ul className="cd-sessions">
-                {SESSIONS.map((s) => {
-                  const meetings = meetingsBySession[s.id] || [];
-                  const seatsLeft = s.seatsTotal - s.seatsFilled;
-                  const full = seatsLeft <= 0;
-                  const low = !full && seatsLeft <= 2;
-                  const open = !!expanded[s.id];
-                  const first = meetings[0];
-                  const last = meetings[meetings.length - 1];
-                  return (
-                    <li key={s.id} className="cd-session">
-                      <div className="cd-session-when">
-                        <p className="cd-session-days">{s.days.join(", ")}</p>
-                        <p className="cd-session-time">
-                          {first ? fmtDate(first) : ""}, {fmtTime(s.time, s.len)}
-                        </p>
-                      </div>
-                      <div className="cd-session-status">
-                        <p><span aria-hidden="true">⏳</span> Started {first ? fmtDate(first) : "—"}</p>
-                        <p>Ends {last ? fmtDate(last) : "—"}</p>
-                        <button
-                          type="button"
-                          className="cd-show-more"
-                          onClick={() => setExpanded((e) => ({ ...e, [s.id]: !e[s.id] }))}
-                          aria-expanded={open}
-                        >
-                          {open ? "Hide" : "Show"} remaining {Math.max(0, meetings.length - 1)} meetings
-                        </button>
-                        {open && (
-                          <ul className="cd-meeting-list">
-                            {meetings.slice(1).map((m, i) => (
-                              <li key={i}>{m.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                      <div className="cd-session-seats">
-                        <p>{s.seatsFilled} seat{s.seatsFilled === 1 ? "" : "s"} filled</p>
-                        {low && <p className="cd-seats-low">Only {seatsLeft} seat{seatsLeft === 1 ? "" : "s"} left!</p>}
-                        {full && <p className="cd-seats-low">Full — join the waitlist</p>}
-                      </div>
-                      <Link
-                        href={enrollHref(s.id)}
-                        className="cd-join"
-                        data-full={full}
-                      >
-                        {full ? "Join waitlist" : "Enroll — Week 1"}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              <div className="cd-request">
-                <p>Don't see a time that works?</p>
-                <button type="button" disabled aria-disabled="true" title="Direct requests aren't available yet">
-                  Request another time — soon
-                </button>
-              </div>
-            </div>
           </div>
 
           <aside className="cd-side" aria-label="Enroll in this class">
             <div className="cd-side-card">
-              <p className="cd-side-kind">Live group class</p>
+              <p className="cd-side-kind">Live 1:1 classes</p>
               <p className="cd-side-price">
                 <b>₹{cls.price.toLocaleString()}</b> <i>per session</i>
               </p>
@@ -481,7 +466,16 @@ function ClassDetailInner({
                   Enroll now
                 </Link>
               ) : (
-                <a className="cd-side-cta" href="#available-times">See all available times</a>
+                <button
+                  type="button"
+                  className="cd-side-cta"
+                  onClick={() => {
+                    setTab("Learning goals");
+                    document.getElementById("available-times")?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                >
+                  See all available times
+                </button>
               )}
             </div>
           </aside>
@@ -495,7 +489,15 @@ function ClassDetailInner({
         {cls.productId ? (
           <Link href={`/checkout?product=${cls.productId}`}>Enroll now</Link>
         ) : (
-          <a href="#available-times">See times</a>
+          <button
+            type="button"
+            onClick={() => {
+              setTab("Learning goals");
+              document.getElementById("available-times")?.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            See times
+          </button>
         )}
       </div>
 
@@ -647,8 +649,8 @@ const css = `
 }
 .cd-side-primary:hover{ filter:brightness(1.06); }
 .cd-side-cta{
-  display:block; text-align:center; padding:13px; border-radius:var(--radius);
-  background:var(--brand-accent-soft); color:var(--brand-accent);
+  display:block; width:100%; text-align:center; padding:13px; border-radius:var(--radius); border:0;
+  background:var(--brand-accent-soft); color:var(--brand-accent); cursor:pointer;
   font-family:var(--brand-font-display); font-weight:600; font-size:.9rem; text-decoration:none;
 }
 [data-theme="dark"] .cd-side-cta{ color:var(--brand-ink); }
@@ -664,8 +666,8 @@ const css = `
 @media (min-width:900px){ .cd-mobilebar{ display:none; } }
 .cd-mobilebar b{ font-family:var(--brand-font-display); font-size:1.1rem; }
 .cd-mobilebar span{ color:var(--brand-ink-soft); font-size:.8rem; }
-.cd-mobilebar a{
-  padding:11px 20px; border-radius:var(--radius);
+.cd-mobilebar a, .cd-mobilebar button{
+  padding:11px 20px; border-radius:var(--radius); border:0; cursor:pointer;
   background:var(--brand-accent); color:var(--brand-accent-ink);
   font-family:var(--brand-font-display); font-weight:600; text-decoration:none; font-size:.9rem;
 }
