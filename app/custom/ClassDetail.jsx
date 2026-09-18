@@ -135,7 +135,14 @@ function fmtTime(hhmm, len) {
 }
 
 function mapRealProduct(p) {
-  const desc = (p.description && p.description.trim()) || (p.long_description && p.long_description.trim()) || "";
+  // The Description tab shows the LONG description specifically — verified
+  // live (product/view for a real product) that `long_description` and
+  // `description` are two separate real fields, not a fallback pair: the
+  // short `description` is the one-liner used in listing cards/tiles
+  // elsewhere, `long_description` is the fuller write-up meant for this tab.
+  // Falls back to the short one only if a product genuinely has no long
+  // description set.
+  const desc = (p.long_description && p.long_description.trim()) || (p.description && p.description.trim()) || "";
   const name = p.name || "Untitled class";
   const term = encodeURIComponent(`${name}, class`);
   return {
