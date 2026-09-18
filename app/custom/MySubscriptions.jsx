@@ -314,35 +314,51 @@ function Detail({ ruleId, session }) {
   const [pausing, setPausing] = useState(false);
   const [pauseError, setPauseError] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    setState('loading');
-    yeloPost('recurring/getRuleDetails', {
+  // Pulled out so a mutating action can re-confirm the real, current rule
+  // from the server afterwards, instead of only trusting an optimistic local
+  // patch — the fastest way to guarantee "Paused"/"In progress" never drifts
+  // from the truth, whatever the actual mechanism behind a reported "skipping
+  // a class flips it back to in-progress" would turn out to be. Nothing in
+  // `recurring/addVacationRule`'s own real source touches `is_paused` at all
+  // (only `recurring/updateRecurringRule` does), so this refetch is a
+  // safety net rather than a fix for a located bug in that endpoint.
+  async function fetchRule() {
+    const json = await yeloPost('recurring/getRuleDetails', {
       ...YELO_TENANT,
       user_id: YELO_TENANT.marketplace_user_id, // required, not used to filter — see file header
       vendor_id: session.vendorId,
       access_token: session.token,
       rule_id: ruleId,
-    }).then((json) => {
+    });
+    return json?.status === 200 ? json?.data?.result?.[0] : null;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    setState('loading');
+    fetchRule().then((r) => {
       if (cancelled) return;
-      const r = json?.status === 200 ? json?.data?.result?.[0] : null;
       if (r) { setRule(r); setState('ok'); } else { setState('error'); }
     });
     return () => { cancelled = true; };
   }, [ruleId, session]);
 
+  // Locked against skipSession too (see there) — one mutating call to this
+  // rule at a time, so a fast double-tap across the two actions can't race.
   async function togglePause() {
-    if (!rule || pausing) return;
+    if (!rule || pausing || skippingDate) return;
     const nextPaused = Number(rule.is_paused) === 1 ? 0 : 1;
     setPausing(true);
     setPauseError('');
     const r = await setRulePaused(rule.rule_id, rule.user_id, nextPaused, session);
-    setPausing(false);
     if (r?.status === 200) {
-      setRule((prev) => (prev ? { ...prev, is_paused: nextPaused } : prev));
+      const fresh = await fetchRule();
+      if (fresh) setRule(fresh);
+      else setRule((prev) => (prev ? { ...prev, is_paused: nextPaused } : prev));
     } else {
       setPauseError(r?.message || `Couldn't ${nextPaused ? 'pause' : 'resume'} this course — please try again.`);
     }
+    setPausing(false);
   }
 
   // The per-session schedule for this rule — split by the backend into
@@ -383,23 +399,42 @@ function Detail({ ruleId, session }) {
   // Skip one upcoming session — real endpoint, real payload (see
   // addVacationDates above). Sends just that one date; the backend accepts
   // an array, but nothing here batches multiple dates in one request.
+  //
+  // THE REAL "ALREADY-SKIPPED STAYS SKIPPED" BUG, confirmed in
+  // yelo-server's own source (recurringController.js addVacationRule:
+  // 1044-1074): this endpoint TOGGLES a date — call it again for a date
+  // that's already skipped and the backend REMOVES it from the skip list
+  // instead of leaving it skipped. The UI already hides the Skip button once
+  // a row shows is_skipped, but that's local state, which can be stale for a
+  // moment right after another action resolves — so this also checks the
+  // latest known session list before ever sending the call, and simply does
+  // nothing if that date is already marked skipped, rather than trusting the
+  // button having been hidden to be enough on its own.
   const [skippingDate, setSkippingDate] = useState(null);
   const [skipError, setSkipError] = useState('');
 
   async function skipSession(date) {
-    if (!rule || skippingDate) return;
+    if (!rule || skippingDate || pausing) return;
+    const already = sessions.upcoming.find((s) => s.date === date)?.is_skipped;
+    if (already) return;
     setSkippingDate(date);
     setSkipError('');
     const r = await addVacationDates(rule.rule_id, rule.user_id, [date], session);
-    setSkippingDate(null);
     if (r?.status === 200) {
       setSessions((prev) => ({
         ...prev,
         upcoming: prev.upcoming.map((s) => (s.date === date ? { ...s, is_skipped: 1 } : s)),
       }));
+      // Confirmed live that this endpoint never touches is_paused, but
+      // re-checking anyway costs one cheap read and removes all doubt —
+      // "Paused"/"In progress" always reflects what the server actually has
+      // right after any action that touches this rule.
+      const fresh = await fetchRule();
+      if (fresh) setRule(fresh);
     } else {
       setSkipError(r?.message || "Couldn't skip that session — please try again.");
     }
+    setSkippingDate(null);
   }
 
   if (state === 'loading') {
@@ -454,7 +489,7 @@ function Detail({ ruleId, session }) {
               type="button"
               className={`ms-pause-btn${isPaused ? ' is-resume' : ''}`}
               onClick={togglePause}
-              disabled={pausing}
+              disabled={pausing || !!skippingDate}
             >
               {pausing ? (isPaused ? 'Resuming…' : 'Pausing…') : isPaused ? 'Resume course' : 'Pause course'}
             </button>
@@ -470,12 +505,13 @@ function Detail({ ruleId, session }) {
         onSkip={skipSession}
         skippingDate={skippingDate}
         skipError={skipError}
+        actionsLocked={pausing}
       />
     </div>
   );
 }
 
-function SessionSchedule({ state, sessions, onSkip, skippingDate, skipError }) {
+function SessionSchedule({ state, sessions, onSkip, skippingDate, skipError, actionsLocked }) {
   const [tab, setTab] = useState('upcoming'); // upcoming | completed
 
   if (state === 'loading') {
@@ -548,6 +584,7 @@ function SessionSchedule({ state, sessions, onSkip, skippingDate, skipError }) {
                 kind={tab}
                 onSkip={onSkip}
                 skipping={skippingDate === s.date}
+                skipDisabled={actionsLocked || (!!skippingDate && skippingDate !== s.date)}
               />
             ))}
           </ol>
@@ -557,7 +594,7 @@ function SessionSchedule({ state, sessions, onSkip, skippingDate, skipError }) {
   );
 }
 
-function SessionRow({ s, kind, onSkip, skipping }) {
+function SessionRow({ s, kind, onSkip, skipping, skipDisabled }) {
   const time = fmtTime(s.start_time);
   const end = fmtTime(s.end_time);
   const skipped = !!s.is_skipped;
@@ -594,7 +631,7 @@ function SessionRow({ s, kind, onSkip, skipping }) {
                 type="button"
                 className="ms-skip-btn"
                 onClick={() => onSkip?.(s.date)}
-                disabled={skipping}
+                disabled={skipping || skipDisabled}
               >
                 {skipping ? 'Skipping…' : 'Skip'}
               </button>
