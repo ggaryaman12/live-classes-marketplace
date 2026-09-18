@@ -250,32 +250,17 @@ function ListView({ session }) {
           r={r}
           name={names[r.user_id]}
           namesLoading={namesLoading}
-          session={session}
         />
       ))}
     </ul>
   );
 }
 
-function SubscriptionCard({ r, name, namesLoading, session }) {
-  // Local override so a pause/resume tapped right here updates this one card
-  // immediately, without re-fetching the whole list.
-  const [isPaused, setIsPaused] = useState(Number(r.is_paused) === 1);
-  const [pausing, setPausing] = useState(false);
-  const [pauseError, setPauseError] = useState('');
-  const cs = courseState({ ...r, is_paused: isPaused ? 1 : 0 });
-  const canToggle = cs.cls === 'progress' || cs.cls === 'paused';
-
-  async function togglePause() {
-    if (pausing) return;
-    const next = isPaused ? 0 : 1;
-    setPausing(true);
-    setPauseError('');
-    const res = await setRulePaused(r.rule_id, r.user_id, next, session);
-    setPausing(false);
-    if (res?.status === 200) setIsPaused(next === 1);
-    else setPauseError(res?.message || `Couldn't ${next ? 'pause' : 'resume'} — try again.`);
-  }
+function SubscriptionCard({ r, name, namesLoading }) {
+  // Pause/resume lives on the detail page only now — this card is
+  // read-only status, per instruction: show the real state, don't act on it
+  // from here.
+  const cs = courseState(r);
 
   return (
     <li className="ms-card">
@@ -298,20 +283,7 @@ function SubscriptionCard({ r, name, namesLoading, session }) {
           <dd>{r.schedule_type === 2 ? `${r.remaining_occurrence_count}/${r.occurrence_count} left` : fmtDate(r.end_schedule) || '—'}</dd>
         </div>
       </dl>
-      {pauseError && <p className="ms-pause-error">{pauseError}</p>}
-      <div className="ms-card-actions">
-        <Link href={`?rule=${r.rule_id}`} className="ms-view">View details →</Link>
-        {canToggle && (
-          <button
-            type="button"
-            className={`ms-card-pause${isPaused ? ' is-resume' : ''}`}
-            onClick={togglePause}
-            disabled={pausing}
-          >
-            {pausing ? (isPaused ? 'Resuming…' : 'Pausing…') : isPaused ? 'Resume' : 'Pause'}
-          </button>
-        )}
-      </div>
+      <Link href={`?rule=${r.rule_id}`} className="ms-view">View details →</Link>
     </li>
   );
 }
@@ -589,17 +561,6 @@ const css = `
 .ms-card-facts dd{ margin:0; font-weight:600; font-size:.82rem; }
 .ms-view{ justify-self:start; color:var(--brand-accent); font-weight:650; font-size:.86rem; text-decoration:none; }
 .ms-view:hover{ text-decoration:underline; }
-.ms-card-actions{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
-.ms-card-pause{
-  padding:6px 14px; border-radius:980px; border:1px solid var(--brand-line);
-  background:var(--brand-paper); color:var(--brand-ink-soft); font:inherit; font-weight:650; font-size:.78rem; cursor:pointer;
-  transition:border-color var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease);
-}
-.ms-card-pause:hover{ border-color:color-mix(in srgb, var(--brand-ink) 40%, var(--brand-line)); color:var(--brand-ink); }
-.ms-card-pause.is-resume{ background:var(--brand-accent-soft); color:var(--brand-accent); border-color:transparent; }
-.ms-card-pause:disabled{ opacity:.6; cursor:default; }
-.ms-card-pause:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
-
 .ms-badge{ padding:3px 10px; border-radius:980px; font-size:.7rem; font-weight:700; letter-spacing:.02em; white-space:nowrap; }
 .ms-badge-progress{ background:var(--brand-accent-soft); color:var(--brand-accent); }
 .ms-badge-complete{ background:color-mix(in srgb, #2f9e5f 18%, transparent); color:#1c7a45; }
