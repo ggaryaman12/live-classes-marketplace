@@ -129,18 +129,59 @@ export default function SubscribeScheduler() {
 function SubscribeSchedulerInner() {
   const params = useSearchParams();
   const router = useRouter();
+  const cart = useCart();
   // This scheduler is stage 1 of the checkout page. The class id arrives as
   // `product` there (and as `id` when linked from anywhere else).
   const id = params.get("id") || params.get("product");
   const [product, setProduct] = useState(null);
 
-  // Once the subscription is actually confirmed (ClassCheckout.jsx sets
-  // `enrolled=1` on the URL the moment an order/rule is really created — see
-  // its own comment on this), the schedule picker must never come back, even
-  // if something puts `step=schedule` back on the URL (a bookmarked link, a
-  // reload, the back button). Checking placement, not payment, in progress —
-  // the flow is over, full stop.
   const confirmed = ["order", "order_id", "job_id", "rule_id", "enrolled"].some((k) => params.get(k));
+
+  // THE BUG THIS CATCHES: the cart's own "Go to checkout" button (shared site
+  // chrome, not built here) just sends the browser to bare `/checkout` — no
+  // `product` id, no schedule. That's fine for a one-time class (nothing to
+  // schedule), but a recurring-enabled class landed here with the payment
+  // step rendering directly, no schedule ever chosen, and no day_array/
+  // schedule_time on the eventual order — a real subscription silently
+  // placed as a single one-off booking. Only fires when there is genuinely no
+  // explicit id AND exactly one item in the cart (a second item means this
+  // can't safely guess which one to schedule, so it's left to the existing
+  // one-time path rather than guessing wrong).
+  useEffect(() => {
+    if (id || confirmed || cart.items.length !== 1) return;
+    let cancelled = false;
+    const cartProductId = cart.items[0].id;
+    async function checkCartItem() {
+      try {
+        const res = await fetch(`${YELO_BASE}/product/view`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", base_version: "1.0.0", device_type: "WEB" },
+          body: JSON.stringify({ ...YELO_TENANT, product_id: Number(cartProductId) }),
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        const p = json?.status === 200 ? (Array.isArray(json.data) ? json.data[0] : json.data) : null;
+        if (p && p.is_recurring_enabled === 1) {
+          router.replace(`/checkout?product=${cartProductId}`);
+        }
+      } catch {
+        /* can't confirm — leave the existing one-time checkout path alone */
+      }
+    }
+    checkCartItem();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, confirmed, cart.items.length]);
+
+  // `confirmed` is declared above (needed there too, for the cart-fallback
+  // guard). Once the subscription is actually confirmed (ClassCheckout.jsx
+  // sets `enrolled=1` on the URL the moment an order/rule is really created —
+  // see its own comment on this), the schedule picker must never come back,
+  // even if something puts `step=schedule` back on the URL (a bookmarked
+  // link, a reload, the back button). Checking placement, not payment, in
+  // progress — the flow is over, full stop.
 
   // Stage 2 (details & payment) is active once a real time is locked in and the
   // parent hasn't asked to come back and edit — hide the scheduler then.
