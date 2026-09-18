@@ -46,7 +46,7 @@
         "paymentLabel": "How you’ll pay",
         "summaryLabel": "Your enrollment",
         "ctaLabel": "Confirm & enroll",
-        "allowCash": true,
+        "allowCash": false,
         "allowWallet": false
       },
       "bind": {
