@@ -26,7 +26,7 @@
         "component": "MeetTheInstructor",
         "heading": "Meet the instructor",
         "backLabel": "← All teachers",
-        "browseHref": "/stores"
+        "browseHref": "/"
       }
     },
     "approach": {
