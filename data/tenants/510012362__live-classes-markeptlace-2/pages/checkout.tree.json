@@ -1,56 +1,99 @@
 {
   "schema": "yelo.tree/1",
-  "page": "checkout",
-  "root": "p1",
+  "page": "landing",
+  "root": "page",
   "nodes": {
-    "p1": {
-      "id": "p1",
+    "page": {
+      "id": "page",
       "type": "Page",
       "props": {},
       "children": [
-        "enroll",
-        "schedule",
-        "recurringSummary",
-        "checkout1"
+        "hero",
+        "subjects",
+        "how",
+        "teachersLede",
+        "grid",
+        "trust",
+        "myCourses",
+        "profileLink",
+        "chat"
       ]
     },
-    "enroll": {
-      "id": "enroll",
+    "hero": {
+      "id": "hero",
       "type": "Custom",
       "props": {
-        "component": "EnrollHeader",
-        "eyebrow": "Confirm your subscription"
+        "component": "BellHero",
+        "eyebrow": "Live online classes for curious kids",
+        "searchPlaceholder": "Try “chess”, “creative writing”, “fractions”…",
+        "browseHref": "/stores"
       }
     },
-    "schedule": {
-      "id": "schedule",
+    "subjects": {
+      "id": "subjects",
       "type": "Custom",
       "props": {
-        "component": "SubscribeScheduler"
+        "component": "SubjectTiles",
+        "heading": "Browse by category",
+        "subhead": "What this teacher network actually offers right now, pulled live from the marketplace.",
+        "browseHref": "/stores"
       }
     },
-    "recurringSummary": {
-      "id": "recurringSummary",
+    "how": {
+      "id": "how",
       "type": "Custom",
       "props": {
-        "component": "RecurringSummary",
-        "heading": "Your schedule"
+        "component": "HowLiveWorks",
+        "heading": "How a live class works IN LIVE"
       }
     },
-    "checkout1": {
-      "id": "checkout1",
+    "teachersLede": {
+      "id": "teachersLede",
       "type": "Custom",
       "props": {
-        "component": "ClassCheckout",
-        "title": "Confirm & pay",
-        "paymentLabel": "How you’ll pay",
-        "summaryLabel": "Your enrollment",
-        "ctaLabel": "Confirm & enroll",
-        "allowCash": false,
-        "allowWallet": false
-      },
-      "bind": {
-        "source": "get_bill_breakdown"
+        "component": "TeacherEditorial",
+        "eyebrow": "Who's teaching",
+        "statement": "The people your kid will actually meet — not a logo, not a bot. Real teachers, running small rooms they've built themselves."
+      }
+    },
+    "grid": {
+      "id": "grid",
+      "type": "Custom",
+      "props": {
+        "component": "TeacherDirectory",
+        "heading": "Teachers with classes open now",
+        "columns": 3
+      }
+    },
+    "trust": {
+      "id": "trust",
+      "type": "Custom",
+      "props": {
+        "component": "TrustStrip",
+        "heading": "Enough to feel good about handing over the tablet",
+        "browseHref": "/stores",
+        "classHref": "/p/class"
+      }
+    },
+    "myCourses": {
+      "id": "myCourses",
+      "type": "Custom",
+      "props": {
+        "component": "MyCoursesLink"
+      }
+    },
+    "profileLink": {
+      "id": "profileLink",
+      "type": "Custom",
+      "props": {
+        "component": "ProfileLink"
+      }
+    },
+    "chat": {
+      "id": "chat",
+      "type": "Custom",
+      "props": {
+        "component": "HippoChatLauncher"
       }
     }
   }
