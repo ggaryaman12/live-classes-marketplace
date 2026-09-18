@@ -16,14 +16,14 @@
  * classes" list, not a per-store one — `user_id` is sent because the field
  * is required to validate, and its value doesn't change the result.
  *
- * The list call's own columns don't include a teacher name (verified: only
- * rule_id/status/amount/schedule/occurrence fields), so each unique store
- * id in the results is resolved to a name with one follow-up call to
- * `marketplace_get_city_storefronts_single_v2` (the real single-store
- * lookup this storefront's own store page already uses), deduped so a
- * customer with N rules at the same two teachers only costs 2 calls, not N.
- * The detail call already includes `merchant_name`, so no extra lookup
- * there.
+ * The list call's own columns don't include a course name OR a teacher name
+ * (verified live: only rule_id/status/amount/schedule/occurrence fields), so
+ * each row gets one follow-up call to `recurring/getRuleDetails` — verified
+ * live to return both `products[0].product.product_name` (the actual course,
+ * e.g. "Maths (Age 5-10)") and `merchant_name` (the teacher) in a single
+ * response, so one call per rule covers both instead of needing a separate
+ * store lookup. This can't be deduped by store the way a name-only lookup
+ * could, since two rules at the same teacher can be different courses.
  *
  * Self-contained, direct-to-backend calls — same established pattern as
  * SubscribeScheduler/ClassCheckout/SubscriptionConfirm.
@@ -193,17 +193,14 @@ function EmptyCard({ title, body, cta }) {
 function ListView({ session }) {
   const [state, setState] = useState('loading'); // loading | ok | empty | error
   const [rules, setRules] = useState([]);
-  const [names, setNames] = useState({}); // store user_id -> store_name
+  const [details, setDetails] = useState({}); // rule_id -> { course, teacher }
   // The rule id is on every list row from the FIRST response and never
-  // changes; the teacher name needs a second round of calls (see below) and
-  // arrives a beat later. Showing the id AS the heading, then swapping the
-  // whole heading's text for the name the moment it resolves, is what read
-  // as a flash/blink — "Recurring #805" replaced by "QA X" mid-render. Fixed
-  // by never using one as a stand-in for the other: the id is its own
-  // always-visible line from the start, and the name has its own reserved
-  // line that shows a skeleton (not blank) until resolved, so nothing already
-  // on screen ever gets swapped for something else.
-  const [namesLoading, setNamesLoading] = useState(true);
+  // changes; the course + teacher name need a second round of calls (see
+  // below) and arrive a beat later. Reserving their own skeleton lines from
+  // the start — rather than showing the id as a placeholder heading and
+  // swapping its text once resolved — avoids the flash/blink that came from
+  // treating one value as a stand-in for another.
+  const [detailsLoading, setDetailsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,16 +222,26 @@ function ListView({ session }) {
         setRules(result);
         setState(result.length ? 'ok' : 'empty');
 
-        // Resolve each distinct teacher's name — the list columns don't
-        // carry it. Deduped so repeat teachers cost one call each, not one
-        // per rule.
-        const ids = [...new Set(result.map((r) => r.user_id).filter(Boolean))];
-        if (!ids.length) { setNamesLoading(false); return; }
-        const resolved = await Promise.all(ids.map((id) =>
-          yeloPost('marketplace_get_city_storefronts_single_v2', { ...YELO_TENANT, ...COORDS, user_id: id, vendor_id: 0, source: 0 })
-            .then((j) => [id, (Array.isArray(j.data) ? j.data[0] : j.data)?.store_name || null])
+        // Resolve each rule's course + teacher name — the list columns
+        // don't carry either. One call per rule (see file header note on
+        // why this can't be deduped by store the way a name-only lookup
+        // could).
+        if (!result.length) { setDetailsLoading(false); return; }
+        const resolved = await Promise.all(result.map((r) =>
+          yeloPost('recurring/getRuleDetails', {
+            ...YELO_TENANT,
+            rule_id: r.rule_id,
+            user_id: r.user_id,
+            vendor_id: session.vendorId,
+            access_token: session.token,
+          }).then((j) => {
+            const d = j?.status === 200 ? j?.data?.result?.[0] : null;
+            const course = d?.products?.[0]?.product?.product_name || d?.products?.[0]?.product?.name || null;
+            const teacher = d?.merchant_name || d?.store_name || null;
+            return [r.rule_id, { course, teacher }];
+          })
         ));
-        if (!cancelled) { setNames(Object.fromEntries(resolved)); setNamesLoading(false); }
+        if (!cancelled) { setDetails(Object.fromEntries(resolved)); setDetailsLoading(false); }
       } else {
         setState('error');
       }
@@ -268,15 +275,16 @@ function ListView({ session }) {
         <SubscriptionCard
           key={r.rule_id}
           r={r}
-          name={names[r.user_id]}
-          namesLoading={namesLoading}
+          course={details[r.rule_id]?.course}
+          teacher={details[r.rule_id]?.teacher}
+          detailsLoading={detailsLoading}
         />
       ))}
     </ul>
   );
 }
 
-function SubscriptionCard({ r, name, namesLoading }) {
+function SubscriptionCard({ r, course, teacher, detailsLoading }) {
   // Pause/resume lives on the detail page only now — this card is
   // read-only status, per instruction: show the real state, don't act on it
   // from here.
@@ -286,12 +294,17 @@ function SubscriptionCard({ r, name, namesLoading }) {
     <li className="ms-card">
       <div className="ms-card-top">
         <div className="ms-card-who">
-          {namesLoading ? (
-            <span className="ms-name-skel" aria-hidden="true" />
+          {detailsLoading ? (
+            <>
+              <span className="ms-name-skel" aria-hidden="true" />
+              <span className="ms-name-skel" aria-hidden="true" style={{ width: 70, height: 11 }} />
+            </>
           ) : (
-            <span className="ms-card-name">{name || 'This teacher'}</span>
+            <>
+              <span className="ms-card-name">{course || 'This course'}</span>
+              <span className="ms-card-id">by {teacher || 'the teacher'}</span>
+            </>
           )}
-          <span className="ms-card-id">Recurring #{r.rule_id}</span>
         </div>
         <span className={`ms-badge ms-badge-${cs.cls}`}>{cs.label}</span>
       </div>
