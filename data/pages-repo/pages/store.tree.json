@@ -8,7 +8,6 @@
       "type": "Page",
       "props": {},
       "children": [
-        "header1",
         "meetInstructor",
         "approach",
         "cat1",
@@ -20,24 +19,14 @@
         "chat"
       ]
     },
-    "header1": {
-      "id": "header1",
-      "type": "StoreHeader",
-      "props": {
-        "showRating": true,
-        "showDelivery": false,
-        "backLabel": "← All teachers"
-      },
-      "bind": {
-        "source": "store"
-      }
-    },
     "meetInstructor": {
       "id": "meetInstructor",
       "type": "Custom",
       "props": {
         "component": "MeetTheInstructor",
-        "heading": "Meet the instructor"
+        "heading": "Meet the instructor",
+        "backLabel": "← All teachers",
+        "browseHref": "/stores"
       }
     },
     "approach": {
