@@ -7,7 +7,7 @@
       "id": "p1",
       "type": "Page",
       "props": {},
-      "children": ["hero", "search", "profileLink", "chat"]
+      "children": ["hero", "search", "profileLink", "myCourses", "chat"]
     },
     "hero": {
       "id": "hero",
@@ -31,6 +31,13 @@
       "type": "Custom",
       "props": {
         "component": "ProfileLink"
+      }
+    },
+    "myCourses": {
+      "id": "myCourses",
+      "type": "Custom",
+      "props": {
+        "component": "MyCoursesLink"
       }
     },
     "chat": {

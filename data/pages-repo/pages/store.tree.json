@@ -15,6 +15,7 @@
         "faq",
         "trust",
         "profileLink",
+        "myCourses",
         "chat"
       ]
     },
@@ -75,6 +76,13 @@
       "type": "Custom",
       "props": {
         "component": "ProfileLink"
+      }
+    },
+    "myCourses": {
+      "id": "myCourses",
+      "type": "Custom",
+      "props": {
+        "component": "MyCoursesLink"
       }
     },
     "chat": {
