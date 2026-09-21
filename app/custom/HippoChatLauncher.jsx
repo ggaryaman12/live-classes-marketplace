@@ -15,6 +15,11 @@
  * workaround: a small, fixed, always-reachable launcher on the pages a
  * parent actually browses, not the header itself.
  *
+ * PINNED TOP-RIGHT, per instruction, in the slot the "My courses" pill used
+ * to occupy (that pill is gone now — its destination, My subscriptions, is
+ * still reachable from the profile page one tap away, so nothing is actually
+ * unreachable, just no longer a persistent floating button of its own).
+ *
  * THE TOKEN: the widget needs this tenant's real `fugu_chat_token` (and
  * `is_fugu_bot_enabled`), which the real webapp reads from
  * `marketplace_fetch_app_configuration`. That call used to answer with a
@@ -100,8 +105,8 @@ export default function HippoChatLauncher() {
                   tags: [`${d.form_name || 'Storefront'} Webapp`],
                   // The widget draws its OWN floating bubble by default — a
                   // real, reported bug: it landed bottom-right, overlapping
-                  // ProfileLink/MyCoursesLink, with a broken image icon of
-                  // its own. 'completeHide' is a real, confirmed option in
+                  // this build's own floating nav buttons, with a broken
+                  // image icon of its own. 'completeHide' is a real, confirmed option in
                   // this exact script (widget-3002.js — every collapseType
                   // branch checks for it) that keeps the widget fully
                   // invisible until code calls `startConversation`, which is
@@ -149,17 +154,17 @@ export default function HippoChatLauncher() {
 
 const css = `
 .hcl{
-  position:fixed; z-index:30; left:18px; bottom:18px;
+  position:fixed; z-index:30; top:130px; right:18px;
   display:inline-flex; align-items:center; gap:7px;
   padding:11px 16px; border-radius:980px; border:0; cursor:pointer;
-  background:var(--brand-ink); color:var(--brand-paper);
+  background:var(--brand-accent); color:var(--brand-accent-ink);
   font-family:var(--brand-font-body); font-weight:650; font-size:.84rem;
   box-shadow:0 6px 18px color-mix(in srgb, var(--brand-ink) 22%, transparent);
   transition:transform var(--motion) var(--motion-ease), filter var(--motion) var(--motion-ease);
 }
-.hcl:hover{ filter:brightness(1.15); transform:translateY(-1px); }
+.hcl:hover{ filter:brightness(1.06); transform:translateY(-1px); }
 .hcl:disabled{ opacity:.7; cursor:default; transform:none; }
 .hcl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
-@media (max-width:560px){ .hcl{ left:14px; bottom:14px; padding:10px 14px; font-size:.8rem; } }
+@media (max-width:560px){ .hcl{ top:120px; right:14px; padding:10px 14px; font-size:.8rem; } }
 @media (prefers-reduced-motion:reduce){ .hcl:hover{ transform:none; } }
 `;
