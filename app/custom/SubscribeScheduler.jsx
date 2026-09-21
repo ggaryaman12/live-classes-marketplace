@@ -196,6 +196,17 @@ function SubscribeSchedulerInner() {
     if (id || confirmed || cart.items.length !== 1) return;
     let cancelled = false;
     const cartProductId = cart.items[0].id;
+    // ClassCheckout.jsx waits on `hasSchedule` before showing anything real
+    // whenever it can't yet tell "one-time, arrived via the cart" apart from
+    // "recurring, still needs a schedule" (see its own comment) — every exit
+    // from this check, including a failed lookup, has to answer that
+    // question, or checkout is left stuck on a loading state forever.
+    const unblockAsOneTime = () => {
+      if (cancelled) return;
+      const sp = new URLSearchParams(params.toString());
+      sp.set("hasSchedule", "0");
+      router.replace(`?${sp.toString()}`, { scroll: false });
+    };
     async function checkCartItem() {
       try {
         const res = await fetch(`${YELO_BASE}/product/view`, {
@@ -208,9 +219,11 @@ function SubscribeSchedulerInner() {
         const p = json?.status === 200 ? (Array.isArray(json.data) ? json.data[0] : json.data) : null;
         if (p && p.is_recurring_enabled === 1) {
           router.replace(`/checkout?product=${cartProductId}`);
+        } else {
+          unblockAsOneTime();
         }
       } catch {
-        /* can't confirm — leave the existing one-time checkout path alone */
+        unblockAsOneTime();
       }
     }
     checkCartItem();
