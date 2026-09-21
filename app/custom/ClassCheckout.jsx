@@ -335,7 +335,24 @@ function ClassCheckoutInner({
   // `scheduled` already proves a schedule was really completed even on a URL
   // that dropped the `hasSchedule` flag (e.g. right after "Proceed to pay"
   // rewrites the query to the day/time params) — never re-hide in that case.
-  const waitingOnSchedule = !!productParam && hasSchedule === null && !scheduled;
+  //
+  // A SECOND, no-productParam version of the exact same wait: the cart's own
+  // "Go to checkout" button (shared chrome, not built here) sends the browser
+  // to bare `/checkout` — no product id at all — for a cart that might still
+  // hold a recurring-enabled class. SubscribeScheduler.jsx runs its own check
+  // in that exact case and always resolves `hasSchedule` one way or the
+  // other (see its comment), but that's a real network round trip; without
+  // waiting on it too, this section flashed "Confirm & pay" for a plain
+  // one-time order before the redirect to the real schedule step landed —
+  // reported live. Mirrors that effect's own trigger condition exactly (no
+  // id, not already confirmed, exactly one cart item) so it never blocks a
+  // multi-item or already-resolved cart — including the `!cart.ready` beat:
+  // the cart itself hydrates from localStorage a tick after mount, so on the
+  // very first render it always LOOKS empty even when it really holds one
+  // item, and trusting that would have skipped this wait entirely.
+  const cartFallbackPending =
+    !productParam && !confirmed && hasSchedule === null && (!cart.ready || cart.items.length === 1);
+  const waitingOnSchedule = (!!productParam && hasSchedule === null && !scheduled) || cartFallbackPending;
   const scheduleRequired = hasSchedule === '1';
 
   let scheduleHref = null;
