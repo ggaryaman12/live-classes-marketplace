@@ -89,6 +89,16 @@ const PRESETS = [
   { key: "fortnight", label: "Fortnight", days: null, cycle: 15 },
   { key: "monthly", label: "Monthly", days: null, cycle: 30 },
 ];
+// Shared by both places this file can decline to add to the cart under the
+// merchant's real "one class per order" setting (see multipleProductSingleCart).
+const cartBlockCss = `
+.sub-cart-block{
+  max-width:640px; margin:0 auto; padding:16px 18px; border-radius:var(--radius-lg, 12px);
+  background:color-mix(in srgb, #c0392b 10%, var(--brand-paper)); border:1px solid #c0392b;
+  color:var(--brand-ink); font-family:var(--brand-font-body); font-size:.92rem; line-height:1.5;
+}
+.sub-cart-block p{ margin:0; }
+`;
 // Same rule the real webapp applies when building its interval list
 // (recurring-tasks.component.ts: `if (!moment().isAfter(current))`) — a slot
 // only appears if it hasn't already passed. For today that trims the
@@ -181,6 +191,40 @@ function SubscribeSchedulerInner() {
   const [product, setProduct] = useState(null);
 
   const confirmed = ["order", "order_id", "job_id", "rule_id", "enrolled"].some((k) => params.get(k));
+
+  // Real merchant config, read live from marketplace_fetch_app_configuration
+  // (confirmed present there: product_multi_select, multiple_product_single_cart
+  // — the exact two toggles the merchant dashboard calls "Product
+  // Multiselection" and "Multiple products/services in single cart").
+  // MULTIPLE_PRODUCT_SINGLE_CART is a real enum, not a boolean: 1 = MULTIPLE
+  // (any number of different classes in one order), 2 = SINGLE (only one
+  // class per order) — traced to yelo-server properties/constants.js.
+  // Verified this restriction is enforced ONLY client-side in the real
+  // marketplace webapp (app-product.component.ts addCartManipulation) — the
+  // real backend accepts a multi-item order either way — so replicating it
+  // here, at the only two places this build ever adds to the cart, is the
+  // actual fix, not a nice-to-have. Defaults to permissive (1) so a failed
+  // fetch never wrongly blocks a real enrollment.
+  const [multipleProductSingleCart, setMultipleProductSingleCart] = useState(1);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${YELO_BASE}/marketplace_fetch_app_configuration`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", base_version: "1.0.0", device_type: "WEB" },
+      body: JSON.stringify(YELO_TENANT),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        if (j?.status === 200 && j?.data?.multiple_product_single_cart != null) {
+          setMultipleProductSingleCart(Number(j.data.multiple_product_single_cart));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // THE BUG THIS CATCHES: the cart's own "Go to checkout" button (shared site
   // chrome, not built here) just sends the browser to bare `/checkout` — no
@@ -300,6 +344,7 @@ function SubscribeSchedulerInner() {
     storeUserId: product.user_id,
     storeName: product.store_name || "This teacher",
     productImage: product.image_url || "",
+    multipleProductSingleCart,
   };
 
   if (product.is_recurring_enabled !== 1) {
@@ -312,12 +357,19 @@ function SubscribeSchedulerInner() {
 // needs to land in the cart so the payment step below has something to show.
 // Adds itself once (a ref guard, since the product/session effects this sits
 // beside can re-render) and renders nothing.
-function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeName, productImage }) {
-  const { add, setQty } = useCart();
+function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeName, productImage, multipleProductSingleCart }) {
+  const { items, add, setQty } = useCart();
   const added = useRef(false);
+  // Real rule: "Multiple products/services in single cart" set to SINGLE (2)
+  // means one class per order, full stop — verified this is what the real
+  // marketplace webapp actually blocks on, not just quantity. A different
+  // product already sitting in the cart means this one can't be silently
+  // added alongside it.
+  const blockedByCartRule =
+    multipleProductSingleCart === 2 && items.length > 0 && items.some((it) => it.id !== productId);
 
   useEffect(() => {
-    if (added.current) return;
+    if (added.current || blockedByCartRule) return;
     added.current = true;
     add(
       { id: storeUserId, name: storeName },
@@ -325,16 +377,33 @@ function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeNa
     );
     setQty(productId, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, storeUserId]);
+  }, [productId, storeUserId, blockedByCartRule]);
+
+  if (blockedByCartRule) {
+    return (
+      <div className="sub-cart-block" role="alert">
+        <p>
+          This teacher only accepts one class per order. Clear your cart before enrolling in
+          {productName ? ` "${productName}"` : " this class"}.
+        </p>
+        <style>{cartBlockCss}</style>
+      </div>
+    );
+  }
 
   return null;
 }
 
-function SubscribePicker({ productId, productName, price, storeUserId, storeName, productImage }) {
+function SubscribePicker({ productId, productName, price, storeUserId, storeName, productImage, multipleProductSingleCart }) {
   const router = useRouter();
   const params = useSearchParams();
-  const { add, setQty } = useCart();
+  const { items, add, setQty } = useCart();
   const [session, setSession] = useState(null);
+  // Same real "one class per order" rule OneTimeAutoEnroll enforces (see its
+  // comment) — checked here too since this is the OTHER of the only two
+  // places this build ever adds to the cart.
+  const blockedByCartRule =
+    multipleProductSingleCart === 2 && items.length > 0 && items.some((it) => it.id !== productId);
 
   useEffect(() => {
     setSession(getSession());
@@ -553,6 +622,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   }, [days, date, time, occurrences, preset, daysDisabled, storeUserId, productId, price, session]);
 
   const proceed = () => {
+    if (blockedByCartRule) return;
     // Populate the real, shared cart (single-merchant — the same `useCart()`
     // CheckoutPanel reads) so checkout actually has this class in it, instead
     // of relying only on URL params RecurringSummary displays.
