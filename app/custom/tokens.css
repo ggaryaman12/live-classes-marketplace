@@ -3,13 +3,13 @@
    other is a half-theme, and the switch would produce a broken page. */
 
 :root {
-  --brand-ink: #2B2016;
-  --brand-ink-soft: #5F5140;
-  --brand-paper: #FBF4E9;
+  --brand-ink: #2E3348;
+  --brand-ink-soft: #565D74;
+  --brand-paper: #F8F9F7;
   --brand-surface: #FFFFFF;
-  --brand-line: #EAE0CF;
-  --brand-accent: #A83C15;
-  --brand-accent-soft: #F7E4D3;
+  --brand-line: #E3E8E2;
+  --brand-accent: #C8442F;
+  --brand-accent-soft: #FBEAE6;
   --brand-accent-ink: #FFFFFF;
   --brand-font-display: "Fredoka", "Trebuchet MS", Verdana, sans-serif;
   --brand-font-body: "Hanken Grotesk", -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -21,14 +21,14 @@
 }
 
 [data-theme="dark"] {
-  --brand-ink: #F3E9D8;
-  --brand-ink-soft: #B5A488;
-  --brand-paper: #20180F;
-  --brand-surface: #2C2117;
-  --brand-line: #3E3020;
-  --brand-accent: #E8875C;
-  --brand-accent-soft: #3A2A1E;
-  --brand-accent-ink: #241A10;
+  --brand-ink: #ECEDF2;
+  --brand-ink-soft: #A8ADC0;
+  --brand-paper: #14161F;
+  --brand-surface: #1D202C;
+  --brand-line: #333850;
+  --brand-accent: #F2705E;
+  --brand-accent-soft: #3A241E;
+  --brand-accent-ink: #2A1510;
   --brand-font-display: "Fredoka", "Trebuchet MS", Verdana, sans-serif;
   --brand-font-body: "Hanken Grotesk", -apple-system, "Segoe UI", Roboto, sans-serif;
   --radius: 14px;
@@ -40,14 +40,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --brand-ink: #F3E9D8;
-    --brand-ink-soft: #B5A488;
-    --brand-paper: #20180F;
-    --brand-surface: #2C2117;
-    --brand-line: #3E3020;
-    --brand-accent: #E8875C;
-    --brand-accent-soft: #3A2A1E;
-    --brand-accent-ink: #241A10;
+    --brand-ink: #ECEDF2;
+    --brand-ink-soft: #A8ADC0;
+    --brand-paper: #14161F;
+    --brand-surface: #1D202C;
+    --brand-line: #333850;
+    --brand-accent: #F2705E;
+    --brand-accent-soft: #3A241E;
+    --brand-accent-ink: #2A1510;
     --brand-font-display: "Fredoka", "Trebuchet MS", Verdana, sans-serif;
     --brand-font-body: "Hanken Grotesk", -apple-system, "Segoe UI", Roboto, sans-serif;
     --radius: 14px;
