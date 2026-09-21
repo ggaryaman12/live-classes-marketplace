@@ -191,6 +191,29 @@ function fmtClock(hhmm) {
   return `${h12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
+// Same helper as SubscribeScheduler.jsx's occurrenceCountToSend() — see its
+// comment there for the real, verified backend bug this corrects for. Kept
+// as its own copy rather than a shared import since components in this
+// workspace are each resolved standalone (see file header).
+function occurrenceCountToSend(startISO, dayArray, desiredCount) {
+  const n = Number(desiredCount);
+  const start = startISO ? new Date(`${startISO}T00:00:00`) : null;
+  if (!dayArray?.length || !Number.isFinite(n) || n <= 0 || !start || isNaN(start.getTime())) {
+    return desiredCount;
+  }
+  const daySet = new Set(dayArray);
+  const cursor = new Date(start);
+  let matches = 0;
+  let guard = 0;
+  while (matches < n && guard < 3660) {
+    if (daySet.has(cursor.getDay())) matches++;
+    if (matches === n) break;
+    cursor.setDate(cursor.getDate() + 1);
+    guard++;
+  }
+  return Math.round((cursor - start) / 86400000);
+}
+
 const post = (url, body) =>
   fetch(apiPath(url), {
     method: 'POST',
@@ -281,16 +304,19 @@ function ClassCheckoutInner({
   const scheduleTime = params.get('time') || '';
   const startSchedule = params.get('start') || '';
   const recurringOccurrences = params.get('occurrences') || '';
-  // Same off-by-one correction SubscribeScheduler.jsx applies for the exact
-  // same reason (see its comment) — get_bill_breakdown counts the end date
-  // of its own derived range as a match too, so an "Everyday" schedule
-  // always comes back one session over what was actually chosen. Without
-  // this, a parent who agreed to 8 sessions on the schedule step would be
-  // billed for 9 right here, at the moment money actually changes hands.
-  const isEveryDayCycle = !cycleType && dayArray.length === 7;
+  // Same real backend bug SubscribeScheduler.jsx's occurrenceCountToSend()
+  // corrects for (see its comment there for the full trace): get_bill_breakdown
+  // counts an INCLUSIVE date range whose end depends on occurrence_count, so
+  // the returned count can land above OR below what the parent actually
+  // chose depending on the exact day_array/start combination — not a fixed
+  // "+1". Without this, a parent who agreed to N sessions on the schedule
+  // step could be billed for a different number right here, at the moment
+  // money actually changes hands. Only meaningful when cycle_type is unset
+  // (Fortnight/Monthly step through dates completely differently and are
+  // sent as chosen, unverified for this fix).
   const requestedRecurringOccurrences =
-    isEveryDayCycle && recurringOccurrences
-      ? String(Math.max(1, Number(recurringOccurrences) - 1))
+    !cycleType && recurringOccurrences
+      ? String(occurrenceCountToSend(startSchedule, dayArray, recurringOccurrences))
       : recurringOccurrences;
   const usesRecurringApi = isSubscription && RECURRING_PAYMENT_METHODS.includes(pay);
 
