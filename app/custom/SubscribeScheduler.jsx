@@ -206,6 +206,16 @@ function SubscribeSchedulerInner() {
   // actual fix, not a nice-to-have. Defaults to permissive (1) so a failed
   // fetch never wrongly blocks a real enrollment.
   const [multipleProductSingleCart, setMultipleProductSingleCart] = useState(1);
+  // THE RACE THIS CLOSES: `multipleProductSingleCart` starts at the
+  // permissive default (1) until this fetch resolves — but OneTimeAutoEnroll
+  // below adds to the cart from its OWN effect the instant it mounts, which
+  // fires within the same tick as this one. Trusting the default while the
+  // real value was still in flight meant the block never engaged in time:
+  // the item was already added before the "actually restricted" answer
+  // arrived. `configReady` makes "don't know yet" its own state, distinct
+  // from "known permissive" — nothing adds to the cart until this settles,
+  // one way or the other.
+  const [configReady, setConfigReady] = useState(false);
   useEffect(() => {
     let cancelled = false;
     fetch(`${YELO_BASE}/marketplace_fetch_app_configuration`, {
@@ -220,7 +230,10 @@ function SubscribeSchedulerInner() {
           setMultipleProductSingleCart(Number(j.data.multiple_product_single_cart));
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setConfigReady(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -345,6 +358,7 @@ function SubscribeSchedulerInner() {
     storeName: product.store_name || "This teacher",
     productImage: product.image_url || "",
     multipleProductSingleCart,
+    configReady,
   };
 
   if (product.is_recurring_enabled !== 1) {
@@ -357,7 +371,7 @@ function SubscribeSchedulerInner() {
 // needs to land in the cart so the payment step below has something to show.
 // Adds itself once (a ref guard, since the product/session effects this sits
 // beside can re-render) and renders nothing.
-function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeName, productImage, multipleProductSingleCart }) {
+function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeName, productImage, multipleProductSingleCart, configReady }) {
   const { items, add, setQty } = useCart();
   const added = useRef(false);
   // Real rule: "Multiple products/services in single cart" set to SINGLE (2)
@@ -369,7 +383,11 @@ function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeNa
     multipleProductSingleCart === 2 && items.length > 0 && items.some((it) => it.id !== productId);
 
   useEffect(() => {
-    if (added.current || blockedByCartRule) return;
+    // Wait for the real config before ever adding — see configReady's
+    // comment in the parent. Without this, the add below (which fires the
+    // instant this mounts) always ran on the still-loading, permissive
+    // default, so the rule never actually got a chance to block anything.
+    if (added.current || blockedByCartRule || !configReady) return;
     added.current = true;
     add(
       { id: storeUserId, name: storeName },
@@ -377,7 +395,7 @@ function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeNa
     );
     setQty(productId, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, storeUserId, blockedByCartRule]);
+  }, [productId, storeUserId, blockedByCartRule, configReady]);
 
   if (blockedByCartRule) {
     return (
@@ -394,7 +412,7 @@ function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeNa
   return null;
 }
 
-function SubscribePicker({ productId, productName, price, storeUserId, storeName, productImage, multipleProductSingleCart }) {
+function SubscribePicker({ productId, productName, price, storeUserId, storeName, productImage, multipleProductSingleCart, configReady }) {
   const router = useRouter();
   const params = useSearchParams();
   const { items, add, setQty } = useCart();
@@ -622,7 +640,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   }, [days, date, time, occurrences, preset, daysDisabled, storeUserId, productId, price, session]);
 
   const proceed = () => {
-    if (blockedByCartRule) return;
+    if (blockedByCartRule || !configReady) return;
     // Populate the real, shared cart (single-merchant — the same `useCart()`
     // CheckoutPanel reads) so checkout actually has this class in it, instead
     // of relying only on URL params RecurringSummary displays.
@@ -799,6 +817,12 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
         {slotState === "fallback" && (
           <p className="sub-note">These are typical hours, not this teacher's real slots — sign in to pick a bookable time before subscribing.</p>
         )}
+        {blockedByCartRule && (
+          <p className="sub-inline-error" role="alert">
+            This teacher only accepts one class per order — clear your cart before subscribing to
+            {productName ? ` "${productName}"` : " this class"}.
+          </p>
+        )}
         <button
           type="button"
           className="sub-cta"
@@ -807,10 +831,13 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
           // the backend checks schedule_time against its own configured
           // slots exactly, so a subscription built on a guess is rejected at
           // save time ("Order date time is not available") instead of here,
-          // where it's still fixable. Block it before that happens.
-          disabled={!days.length || !time || slotState === "fallback"}
+          // where it's still fixable. Block it before that happens. Also
+          // held until the real "one class per order" config is in hand and
+          // confirms clear (see configReady/blockedByCartRule) — otherwise
+          // this could add a second class a beat before the rule ever loads.
+          disabled={!days.length || !time || slotState === "fallback" || !configReady || blockedByCartRule}
         >
-          Proceed to pay
+          {!configReady ? "Checking…" : "Proceed to pay"}
         </button>
       </aside>
 
