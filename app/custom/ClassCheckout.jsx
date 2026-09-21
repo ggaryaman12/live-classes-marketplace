@@ -281,6 +281,17 @@ function ClassCheckoutInner({
   const scheduleTime = params.get('time') || '';
   const startSchedule = params.get('start') || '';
   const recurringOccurrences = params.get('occurrences') || '';
+  // Same off-by-one correction SubscribeScheduler.jsx applies for the exact
+  // same reason (see its comment) — get_bill_breakdown counts the end date
+  // of its own derived range as a match too, so an "Everyday" schedule
+  // always comes back one session over what was actually chosen. Without
+  // this, a parent who agreed to 8 sessions on the schedule step would be
+  // billed for 9 right here, at the moment money actually changes hands.
+  const isEveryDayCycle = !cycleType && dayArray.length === 7;
+  const requestedRecurringOccurrences =
+    isEveryDayCycle && recurringOccurrences
+      ? String(Math.max(1, Number(recurringOccurrences) - 1))
+      : recurringOccurrences;
   const usesRecurringApi = isSubscription && RECURRING_PAYMENT_METHODS.includes(pay);
 
   // Stage 2 of this page. "Edit" jumps back to the scheduler (stage 1) at the
@@ -403,7 +414,7 @@ function ClassCheckoutInner({
       schedule_time: scheduleTime,
       is_recurring_enabled: true,
       ...(cycleType ? { cycle_type: cycleType } : {}),
-      occurrence_count: recurringOccurrences,
+      occurrence_count: requestedRecurringOccurrences,
     }).then((json) => {
       if (cancelled) return;
       if (json?.status === 200 && json?.data) {
