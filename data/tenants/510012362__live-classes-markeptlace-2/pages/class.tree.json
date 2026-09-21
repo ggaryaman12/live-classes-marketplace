@@ -7,7 +7,7 @@
       "id": "p1",
       "type": "Page",
       "props": {},
-      "children": ["detail", "myCourses", "profileLink", "chat"]
+      "children": ["detail", "profileLink", "chat"]
     },
     "detail": {
       "id": "detail",
@@ -16,13 +16,6 @@
         "component": "ClassDetail",
         "backLabel": "← All classes",
         "browseHref": "/stores"
-      }
-    },
-    "myCourses": {
-      "id": "myCourses",
-      "type": "Custom",
-      "props": {
-        "component": "MyCoursesLink"
       }
     },
     "profileLink": {
