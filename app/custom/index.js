@@ -21,6 +21,7 @@ import * as m_HowLiveWorks from './HowLiveWorks.jsx';
 import * as m_LiveCatalogue from './LiveCatalogue.jsx';
 import * as m_LiveClasses from './LiveClasses.jsx';
 import * as m_MeetTheInstructor from './MeetTheInstructor.jsx';
+import * as m_MyCoursesLink from './MyCoursesLink.jsx';
 import * as m_MySubscriptions from './MySubscriptions.jsx';
 import * as m_Profile from './Profile.jsx';
 import * as m_ProfileLink from './ProfileLink.jsx';
@@ -69,6 +70,7 @@ export const CUSTOM = Object.fromEntries(Object.entries({
   LiveCatalogue: pick(m_LiveCatalogue, 'LiveCatalogue'),
   LiveClasses: pick(m_LiveClasses, 'LiveClasses'),
   MeetTheInstructor: pick(m_MeetTheInstructor, 'MeetTheInstructor'),
+  MyCoursesLink: pick(m_MyCoursesLink, 'MyCoursesLink'),
   MySubscriptions: pick(m_MySubscriptions, 'MySubscriptions'),
   Profile: pick(m_Profile, 'Profile'),
   ProfileLink: pick(m_ProfileLink, 'ProfileLink'),

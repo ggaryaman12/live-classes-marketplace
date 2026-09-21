@@ -15,10 +15,10 @@
  * workaround: a small, fixed, always-reachable launcher on the pages a
  * parent actually browses, not the header itself.
  *
- * PINNED TOP-RIGHT, per instruction, in the slot the "My courses" pill used
- * to occupy (that pill is gone now — its destination, My subscriptions, is
- * still reachable from the profile page one tap away, so nothing is actually
- * unreachable, just no longer a persistent floating button of its own).
+ * PINNED BOTTOM-RIGHT, per instruction — Profile and My courses live in
+ * their own row at the top-right instead (see ProfileLink.jsx /
+ * MyCoursesLink.jsx), so this sits alone at the bottom with no risk of
+ * covering either.
  *
  * THE TOKEN: the widget needs this tenant's real `fugu_chat_token` (and
  * `is_fugu_bot_enabled`), which the real webapp reads from
@@ -154,7 +154,7 @@ export default function HippoChatLauncher() {
 
 const css = `
 .hcl{
-  position:fixed; z-index:30; top:130px; right:18px;
+  position:fixed; z-index:30; bottom:18px; right:18px;
   display:inline-flex; align-items:center; gap:7px;
   padding:11px 16px; border-radius:980px; border:0; cursor:pointer;
   background:var(--brand-accent); color:var(--brand-accent-ink);
@@ -165,6 +165,6 @@ const css = `
 .hcl:hover{ filter:brightness(1.06); transform:translateY(-1px); }
 .hcl:disabled{ opacity:.7; cursor:default; transform:none; }
 .hcl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
-@media (max-width:560px){ .hcl{ top:120px; right:14px; padding:10px 14px; font-size:.8rem; } }
+@media (max-width:560px){ .hcl{ bottom:14px; right:14px; padding:10px 14px; font-size:.8rem; } }
 @media (prefers-reduced-motion:reduce){ .hcl:hover{ transform:none; } }
 `;
