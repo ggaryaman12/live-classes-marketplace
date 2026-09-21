@@ -111,6 +111,51 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// THE REAL BUG behind "I picked N sessions but it's billing a different
+// number": confirmed live, repeatedly, against get_bill_breakdown itself
+// (and traced to its source, yelo-server routes/v2/customer_open_apis.js).
+// The backend derives an end date as `start + occurrence_count days`
+// (dateUtility.addDays) and then counts every day_array-matching date from
+// start to that end date INCLUSIVE OF BOTH ENDS (dateUtility.
+// getDatesBetweenDatesWithCycleType — `while (currentDate <= stopDate)`).
+// That means the real returned count depends on whether the END of that
+// window happens to land on a day the parent actually selected — which
+// isn't a fixed "+1": "Everyday" (all 7 days) always overcounts by exactly
+// one; a 6-day custom pick starting on a day the range's tail also matches
+// can undercount instead (this is exactly what going from Tuesday-start to
+// Thursday-start "fixed itself" earlier — different tail day, different
+// error, same underlying bug). A per-preset fudge factor can't cover every
+// combination, so this walks the SAME calendar the backend does, from the
+// real start date, counting only the parent's actual selected weekdays,
+// until it reaches the requested count — then sends the backend the number
+// of days between start and that date, which is provably the value that
+// makes the backend's own inclusive count land exactly on target. Verified
+// live against three different real day_array/start combinations (everyday,
+// weekdays, a 6-day custom pick with Wednesday excluded) — each came back
+// with the exact requested occurrence count once compensated. cycle_type
+// (Fortnight/Monthly) steps through dates completely differently on the
+// backend (14/30-day jumps, not weekday matching), so this compensation
+// only applies when cycle_type is 0 — those two presets are sent as chosen,
+// unverified for the same fix.
+function occurrenceCountToSend(startISO, dayArray, desiredCount) {
+  const n = Number(desiredCount);
+  const start = startISO ? new Date(`${startISO}T00:00:00`) : null;
+  if (!dayArray?.length || !Number.isFinite(n) || n <= 0 || !start || isNaN(start.getTime())) {
+    return desiredCount;
+  }
+  const daySet = new Set(dayArray);
+  const cursor = new Date(start);
+  let matches = 0;
+  let guard = 0;
+  while (matches < n && guard < 3660) {
+    if (daySet.has(cursor.getDay())) matches++;
+    if (matches === n) break;
+    cursor.setDate(cursor.getDate() + 1);
+    guard++;
+  }
+  return Math.round((cursor - start) / 86400000);
+}
+
 export default function SubscribeScheduler() {
   return (
     <Suspense fallback={null}>
@@ -409,24 +454,13 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   const sessionCount = occurrences;
   const estimatedTotal = price * Math.max(sessionCount, 0);
 
-  // THE REAL BUG behind "I picked 8 sessions but it's billing 9": confirmed
-  // live, repeatedly, against get_bill_breakdown itself. The backend derives
-  // an end date as `start + occurrence_count days` and then counts every
-  // day_array-matching date from start to that end date INCLUSIVE OF BOTH
-  // ENDS (yelo-server utilities/dateUtility.js getDatesBetweenDatesWithCycleType
-  // — `while (currentDate <= stopDate)`). When every day of the week is
-  // selected (the "Everyday" frequency, cycle_type 0), that end date always
-  // matches too, so the real, returned OCCURRENCE_COUNT is always exactly
-  // one more than what was sent — verified with several values (sent 1 → got
-  // 2, sent 2 → got 3, sent 7 → got 8, sent 8 → got 9). Compensating by
-  // sending one less ONLY in this exact case (cycle_type 0, all 7 days
-  // selected) makes the real bill match what the parent actually chose.
-  // Weekdays/weekends/fortnight/monthly walk this same date range
-  // differently and were NOT verified to need the same correction (a quick
-  // check even showed "Weekdays" undercounting instead of overcounting), so
-  // they're sent exactly as chosen rather than guessed at.
-  const isEveryDayCycle = !daysDisabled && effectiveDays.length === 7;
-  const requestedOccurrenceCount = isEveryDayCycle ? Math.max(1, occurrences - 1) : occurrences;
+  // See occurrenceCountToSend()'s comment for the real, verified backend bug
+  // this corrects for. Only meaningful when cycle_type is 0 (not
+  // Fortnight/Monthly, which step through dates completely differently).
+  const cycleTypeNow = PRESETS.find((p) => p.key === preset)?.cycle ?? 0;
+  const requestedOccurrenceCount = cycleTypeNow
+    ? occurrences
+    : occurrenceCountToSend(date, effectiveDays, occurrences);
 
   // attempt the real bill preview whenever the schedule changes meaningfully
   useEffect(() => {
