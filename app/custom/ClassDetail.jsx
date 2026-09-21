@@ -1,8 +1,9 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useCart } from "../lib/cart";
 
 /**
  * ClassDetail — the class page. Reads a real product id from the URL
@@ -174,6 +175,8 @@ function ClassDetailInner({
   browseHref = "/stores",
 }) {
   const params = useSearchParams();
+  const router = useRouter();
+  const { add, setQty } = useCart();
   const id = params.get("id");
 
   const [tab, setTab] = useState(TABS[0]);
@@ -248,6 +251,29 @@ function ClassDetailInner({
   const enrollHref = cls.productId
     ? (sessId) => `/checkout?product=${cls.productId}&session=${sessId}`
     : (sessId) => `/checkout?class=${encodeURIComponent(cls.title)}&session=${sessId}`;
+
+  // Real fix: this class used to only land in the cart once the checkout
+  // page's own scheduler mounted and ran its own add — meaning "Enroll"
+  // navigated to a checkout screen with an EMPTY cart for a beat, and if
+  // that page's own add never fired for some reason, nothing was ever really
+  // in the cart at all. Add it right here, at the actual click, so the cart
+  // reflects the choice the instant it's made — matching how the cart drawer
+  // itself (and "Go to checkout") already expect a real item to be there.
+  // `setQty(...,1)` after `add()` for the same reason SubscribeScheduler.jsx
+  // forces it: repeat clicks must never silently stack quantity nobody
+  // chose.
+  function enrollNow(target) {
+    if (!cls.productId) {
+      if (target) router.push(target);
+      return;
+    }
+    add(
+      { id: cls.teacherId, name: cls.teacher },
+      { id: cls.productId, name: cls.title, price: cls.price, image: cls.img }
+    );
+    setQty(cls.productId, 1);
+    router.push(target || `/checkout?product=${cls.productId}`);
+  }
 
   return (
     <section className="bell-cd" aria-label={cls.title}>
@@ -374,13 +400,19 @@ function ClassDetailInner({
                             {low && <p className="cd-seats-low">Only {seatsLeft} seat{seatsLeft === 1 ? "" : "s"} left!</p>}
                             {full && <p className="cd-seats-low">Full — join the waitlist</p>}
                           </div>
-                          <Link
-                            href={enrollHref(s.id)}
-                            className="cd-join"
-                            data-full={full}
-                          >
-                            {full ? "Join waitlist" : "Enroll — Week 1"}
-                          </Link>
+                          {full ? (
+                            <Link href={enrollHref(s.id)} className="cd-join" data-full={full}>
+                              Join waitlist
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              className="cd-join"
+                              onClick={() => enrollNow(enrollHref(s.id))}
+                            >
+                              Enroll — Week 1
+                            </button>
+                          )}
                         </li>
                       );
                     })}
@@ -462,9 +494,9 @@ function ClassDetailInner({
                 <p className="cd-side-total">Taught by {cls.teacher}</p>
               )}
               {cls.productId ? (
-                <Link className="cd-side-primary" href={`/checkout?product=${cls.productId}`}>
+                <button type="button" className="cd-side-primary" onClick={() => enrollNow()}>
                   Enroll now
-                </Link>
+                </button>
               ) : (
                 <button
                   type="button"
@@ -487,7 +519,7 @@ function ClassDetailInner({
           <b>₹{cls.price.toLocaleString()}</b> <span>/ session</span>
         </div>
         {cls.productId ? (
-          <Link href={`/checkout?product=${cls.productId}`}>Enroll now</Link>
+          <button type="button" onClick={() => enrollNow()}>Enroll now</button>
         ) : (
           <button
             type="button"
@@ -615,7 +647,7 @@ const css = `
 .cd-seats-low{ color:var(--brand-accent) !important; font-weight:600; }
 .cd-join{
   display:inline-flex; align-items:center; justify-content:center; white-space:nowrap;
-  padding:11px 18px; border-radius:var(--radius);
+  padding:11px 18px; border-radius:var(--radius); border:0; cursor:pointer;
   background:var(--brand-accent); color:var(--brand-accent-ink);
   font-family:var(--brand-font-display); font-weight:600; font-size:.9rem; text-decoration:none;
   transition:filter var(--motion) var(--motion-ease);
@@ -642,7 +674,8 @@ const css = `
 .cd-side-total{ margin:0 0 16px; color:var(--brand-ink-soft); font-size:.82rem; }
 .cd-side-facts{ list-style:none; margin:0 0 18px; padding:14px 0 0; border-top:1px solid var(--brand-line); display:grid; gap:10px; font-size:.86rem; }
 .cd-side-primary{
-  display:block; text-align:center; padding:13px; border-radius:var(--radius); margin-bottom:10px;
+  display:block; width:100%; text-align:center; padding:13px; border-radius:var(--radius); margin-bottom:10px;
+  border:0; cursor:pointer;
   background:var(--brand-accent); color:var(--brand-accent-ink);
   font-family:var(--brand-font-display); font-weight:600; font-size:.92rem; text-decoration:none;
   transition:filter var(--motion) var(--motion-ease);
