@@ -354,6 +354,19 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   const [date, setDate] = useState(params.get("start") || todayISO());
   const [time, setTime] = useState(params.get("time") || "");
   const [occurrences, setOccurrences] = useState(Math.max(1, Number(params.get("occurrences")) || 8));
+  // The "After N sessions" field used to be a plain controlled number input
+  // wired straight to `occurrences` — forcing every keystroke through
+  // `Math.max(1, Number(value) || 1)`. That's fine once a full number is
+  // typed, but the moment the field is EMPTY mid-edit (select-all + retype,
+  // the normal way to change "8" to "50"), `Number("") || 1` snapped the
+  // field straight back to "1" before the next digit ever landed — so typing
+  // "5" then "0" actually continued from "1", not from nothing. A separate
+  // draft string lets the field hold whatever's actually been typed,
+  // including briefly empty, while `occurrences` (the real value everything
+  // else here — the bill, the summary — reacts to) only updates once the
+  // draft is a genuinely valid number greater than 0.
+  const [occurrencesDraft, setOccurrencesDraft] = useState(String(occurrences));
+  const [occurrencesInvalid, setOccurrencesInvalid] = useState(false);
 
   const [slotState, setSlotState] = useState("loading"); // loading | real | fallback
   const [times, setTimes] = useState(() => buildFallbackTimes(todayISO()));
@@ -645,17 +658,44 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
         <div className="sub-block">
           <p className="sub-label">Ends</p>
           <div className="sub-end">
-            <label className="sub-radio">
+            <label className={`sub-radio${occurrencesInvalid ? " sub-radio-invalid" : ""}`}>
               After
               <input
                 type="number"
                 min="1"
+                inputMode="numeric"
                 className="sub-inline-number"
-                value={occurrences}
-                onChange={(e) => setOccurrences(Math.max(1, Number(e.target.value) || 1))}
+                aria-invalid={occurrencesInvalid}
+                value={occurrencesDraft}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setOccurrencesDraft(raw);
+                  const n = Number(raw);
+                  // Live validation per the actual rule ("a number greater
+                  // than 0"): a real positive integer commits immediately so
+                  // the bill/summary track what's typed as it's typed. An
+                  // empty field, "0", a negative number or stray text just
+                  // flags invalid — it does NOT reset the field or the last
+                  // good `occurrences`, so typing continues undisturbed.
+                  const valid = raw.trim() !== "" && Number.isFinite(n) && Number.isInteger(n) && n > 0;
+                  setOccurrencesInvalid(!valid);
+                  if (valid) setOccurrences(n);
+                }}
+                onBlur={() => {
+                  // Leaving the field with nothing valid in it — snap back to
+                  // the last real value instead of leaving "Ends" pointed at
+                  // an empty or invalid number.
+                  if (occurrencesInvalid) {
+                    setOccurrencesDraft(String(occurrences));
+                    setOccurrencesInvalid(false);
+                  }
+                }}
               />
               sessions
             </label>
+            {occurrencesInvalid && (
+              <p className="sub-inline-error" role="alert">Enter a number greater than 0</p>
+            )}
           </div>
         </div>
       </div>
@@ -762,10 +802,13 @@ const css = `
 }
 .sub-note{ margin:-8px 0 0; font-size:.78rem; color:var(--brand-ink-soft); font-style:italic; }
 
-.sub-end{ display:grid; gap:10px; }
+.sub-end{ display:grid; gap:6px; }
 .sub-radio{ display:flex; align-items:center; gap:8px; font-size:.9rem; }
 .sub-radio input[type="radio"]{ accent-color:var(--brand-accent); }
-.sub-inline-number{ width:64px; padding:6px 8px; border:1px solid var(--brand-line); border-radius:8px; background:var(--brand-paper); color:var(--brand-ink); font:inherit; }
+.sub-inline-number{ width:64px; padding:6px 8px; border:1px solid var(--brand-line); border-radius:8px; background:var(--brand-paper); color:var(--brand-ink); font:inherit; transition:border-color var(--motion) var(--motion-ease); }
+.sub-radio-invalid .sub-inline-number{ border-color:#c0392b; }
+.sub-inline-number:focus-visible{ outline:2px solid var(--brand-accent); outline-offset:1px; }
+.sub-inline-error{ margin:0; font-size:.78rem; color:#c0392b; }
 
 .sub-summary{
   background:var(--card, var(--brand-surface));
