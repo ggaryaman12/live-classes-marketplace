@@ -192,6 +192,27 @@ function SubscribeSchedulerInner() {
 
   const confirmed = ["order", "order_id", "job_id", "rule_id", "enrolled"].some((k) => params.get(k));
 
+  // "Clear cart" lives in the site's shared cart drawer (outside this
+  // tenant's own files, same boundary as "Go to checkout") — there's no file
+  // there to add an on-clear redirect to directly. This gets the same real
+  // outcome by watching the actual cart state instead: if it goes from
+  // having something in it to genuinely empty while a parent is on this
+  // page, that's a real clear (not the page simply loading with nothing in
+  // the cart yet, which `cart.ready` plus the "had items at least once"
+  // guard both rule out), so it's correct to send them back to browse.
+  const hadCartItems = useRef(false);
+  useEffect(() => {
+    if (!cart.ready) return;
+    if (cart.items.length > 0) {
+      hadCartItems.current = true;
+      return;
+    }
+    if (hadCartItems.current) {
+      hadCartItems.current = false;
+      router.push("/stores");
+    }
+  }, [cart.ready, cart.items.length, router]);
+
   // Real merchant config, read live from marketplace_fetch_app_configuration
   // (confirmed present there: product_multi_select, multiple_product_single_cart
   // — the exact two toggles the merchant dashboard calls "Product
