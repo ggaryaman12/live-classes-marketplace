@@ -409,6 +409,25 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   const sessionCount = occurrences;
   const estimatedTotal = price * Math.max(sessionCount, 0);
 
+  // THE REAL BUG behind "I picked 8 sessions but it's billing 9": confirmed
+  // live, repeatedly, against get_bill_breakdown itself. The backend derives
+  // an end date as `start + occurrence_count days` and then counts every
+  // day_array-matching date from start to that end date INCLUSIVE OF BOTH
+  // ENDS (yelo-server utilities/dateUtility.js getDatesBetweenDatesWithCycleType
+  // — `while (currentDate <= stopDate)`). When every day of the week is
+  // selected (the "Everyday" frequency, cycle_type 0), that end date always
+  // matches too, so the real, returned OCCURRENCE_COUNT is always exactly
+  // one more than what was sent — verified with several values (sent 1 → got
+  // 2, sent 2 → got 3, sent 7 → got 8, sent 8 → got 9). Compensating by
+  // sending one less ONLY in this exact case (cycle_type 0, all 7 days
+  // selected) makes the real bill match what the parent actually chose.
+  // Weekdays/weekends/fortnight/monthly walk this same date range
+  // differently and were NOT verified to need the same correction (a quick
+  // check even showed "Weekdays" undercounting instead of overcounting), so
+  // they're sent exactly as chosen rather than guessed at.
+  const isEveryDayCycle = !daysDisabled && effectiveDays.length === 7;
+  const requestedOccurrenceCount = isEveryDayCycle ? Math.max(1, occurrences - 1) : occurrences;
+
   // attempt the real bill preview whenever the schedule changes meaningfully
   useEffect(() => {
     if (!days.length || !time) {
@@ -425,7 +444,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
         schedule_time: time,
         is_recurring_enabled: true,
         cycle_type: preset_?.cycle ?? 0,
-        occurrence_count: String(occurrences),
+        occurrence_count: String(requestedOccurrenceCount),
       };
       try {
         const res = await fetch(`${YELO_BASE}/get_bill_breakdown`, {
