@@ -9,7 +9,7 @@
  * "Sign out") is `app/components/Header.jsx`, shared platform chrome
  * rendered directly in the root layout — outside this tenant's workspace,
  * with no page-tree node to swap it for (see CLAUDE.md boundaries; the same
- * limitation MyCoursesLink.jsx already documents). This build can't remove
+ * limitation ProfileLink.jsx already documents). This build can't remove
  * a button from a file it isn't allowed to edit. What it CAN do — and does
  * — is give "sign out" a real second home here, so a parent who reaches
  * their profile through this page never needs the header's own button.

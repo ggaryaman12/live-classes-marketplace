@@ -4,13 +4,13 @@
  * header to reach your profile." The real top navbar ("Hi, {name}" / "Sign
  * out") is `app/components/Header.jsx` in the platform app — shared chrome
  * rendered directly in the root layout, outside this tenant's own workspace
- * (see CLAUDE.md boundaries, and the same note already on MyCoursesLink.jsx).
- * It isn't driven by a page tree, so there's no node to swap it for, and no
- * prop this build can pass it to move "Sign out" elsewhere or make the name
- * a link. This is the same workaround MyCoursesLink.jsx already uses for the
- * same limitation: a small, fixed, always-reachable tab on the pages a
- * parent actually browses from, stacked just above it so neither covers
- * the other. Only renders once signed in.
+ * (see CLAUDE.md boundaries). It isn't driven by a page tree, so there's no
+ * node to swap it for, and no prop this build can pass it to move "Sign out"
+ * elsewhere or make the name a link. This is the nearest real workaround: a
+ * small, fixed, always-reachable tab on the pages a parent actually browses
+ * from — pinned top-right, under the real header, stacked just above the
+ * relocated chat launcher so neither covers the other. Only renders once
+ * signed in.
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -43,7 +43,7 @@ export default function ProfileLink() {
 
 const css = `
 .pfl{
-  position:fixed; z-index:30; right:18px; bottom:70px;
+  position:fixed; z-index:30; top:76px; right:18px;
   display:inline-flex; align-items:center; gap:7px;
   padding:11px 16px; border-radius:980px;
   background:var(--brand-surface); color:var(--brand-ink);
@@ -54,6 +54,6 @@ const css = `
 }
 .pfl:hover{ border-color:var(--brand-accent); color:var(--brand-accent); transform:translateY(-1px); }
 .pfl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
-@media (max-width:560px){ .pfl{ right:14px; bottom:64px; padding:10px 14px; font-size:.8rem; } }
+@media (max-width:560px){ .pfl{ top:70px; right:14px; padding:10px 14px; font-size:.8rem; } }
 @media (prefers-reduced-motion:reduce){ .pfl:hover{ transform:none; } }
 `;
