@@ -265,8 +265,30 @@ function ClassCheckoutInner({
     allowCash ? PAYMENT.CASH : allowRazorpay ? RAZORPAY : PAYMENT.WALLET
   );
   const [contact, setContact] = useState({ name: '', phone: '', email: '' });
+  // "Clear cart" lives in the shared cart drawer outside this tenant's own
+  // files (same boundary as "Go to checkout"), so there's no click handler
+  // there to add a redirect to. Watching the real cart state gets the same
+  // outcome: if it goes from having something in it to genuinely empty while
+  // a parent is on this page, send them back to browse — UNLESS this page
+  // just cleared it itself after a real, successful order (see the several
+  // `cart.clear()` calls below, right after `setPlaced(...)`), in which case
+  // staying on the confirmation screen is obviously correct, not a bug.
+  const hadCartItems = useRef(false);
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced] = useState(null);
+
+  useEffect(() => {
+    if (!cart.ready) return;
+    if (cart.items.length > 0) {
+      hadCartItems.current = true;
+      return;
+    }
+    if (hadCartItems.current) {
+      hadCartItems.current = false;
+      if (!placed) router.push('/stores');
+    }
+  }, [cart.ready, cart.items.length, placed, router]);
+
   const [error, setError] = useState('');
   const [badFields, setBadFields] = useState([]);
   const [currencyId, setCurrencyId] = useState(undefined);
