@@ -8,17 +8,15 @@
  * the same script tag and the same global `window.startConversation(...)`
  * call the real storefront uses (set-external-lib.service.ts:198-227).
  *
- * WHY THIS ISN'T ON THE HEADER'S "HELP" LINK: that link lives in
- * app/components/Header.jsx, shared platform chrome in the root layout,
- * outside this tenant's workspace — the same boundary already true for
- * "Hi, {name}" and "Sign out" (see ProfileLink.jsx). This is the same
- * workaround: a small, fixed, always-reachable launcher on the pages a
- * parent actually browses, not the header itself.
+ * WHY THIS ISN'T ON THE HEADER'S "HELP" LINK: "Help" is a static placeholder
+ * in chrome/Header.jsx with nothing behind it yet — this is a small, fixed,
+ * always-reachable launcher on the pages a parent actually browses instead,
+ * not a rework of that link.
  *
- * PINNED BOTTOM-RIGHT, per instruction — Profile and My courses live in
- * their own row at the top-right instead (see ProfileLink.jsx /
- * MyCoursesLink.jsx), so this sits alone at the bottom with no risk of
- * covering either.
+ * PINNED BOTTOM-RIGHT, per instruction — My courses moved to sit directly
+ * above it in the same corner (see MyCoursesLink.jsx); Profile now lives in
+ * the header itself ("Hi, {name}" links to /p/profile, see chrome/Header.jsx),
+ * so nothing else shares this bottom-right stack but the two of them.
  *
  * THE TOKEN: the widget needs this tenant's real `fugu_chat_token` (and
  * `is_fugu_bot_enabled`), which the real webapp reads from

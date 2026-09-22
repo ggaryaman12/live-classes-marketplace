@@ -24,7 +24,6 @@ import * as m_MeetTheInstructor from './MeetTheInstructor.jsx';
 import * as m_MyCoursesLink from './MyCoursesLink.jsx';
 import * as m_MySubscriptions from './MySubscriptions.jsx';
 import * as m_Profile from './Profile.jsx';
-import * as m_ProfileLink from './ProfileLink.jsx';
 import * as m_RecurringSummary from './RecurringSummary.jsx';
 import * as m_SearchHero from './SearchHero.jsx';
 import * as m_StartingThisWeek from './StartingThisWeek.jsx';
@@ -73,7 +72,6 @@ export const CUSTOM = Object.fromEntries(Object.entries({
   MyCoursesLink: pick(m_MyCoursesLink, 'MyCoursesLink'),
   MySubscriptions: pick(m_MySubscriptions, 'MySubscriptions'),
   Profile: pick(m_Profile, 'Profile'),
-  ProfileLink: pick(m_ProfileLink, 'ProfileLink'),
   RecurringSummary: pick(m_RecurringSummary, 'RecurringSummary'),
   SearchHero: pick(m_SearchHero, 'SearchHero'),
   StartingThisWeek: pick(m_StartingThisWeek, 'StartingThisWeek'),
