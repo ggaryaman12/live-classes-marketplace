@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useCart } from '../lib/cart';
-import { getSession, clearSession } from '../lib/session';
+import { getSession } from '../lib/session';
 import AuthModal from './AuthModal';
 import CartSheet from './CartSheet';
 
@@ -36,10 +36,9 @@ export default function Header() {
           <Link href="/">Browse</Link>
           <a href="#">Help</a>
           {session ? (
-            <span className="hd-account">
-              <Link href="/p/profile" className="hd-hi">Hi, {session.name?.split(' ')[0] || 'there'}</Link>
-              <button className="hd-link" onClick={() => { clearSession(); }}>Sign out</button>
-            </span>
+            // Per instruction: no "Sign out" here — signing out now lives on
+            // the profile page only, one click away via "Hi, {name}" below.
+            <Link href="/p/profile" className="hd-hi">Hi, {session.name?.split(' ')[0] || 'there'}</Link>
           ) : (
             <button className="hd-signin" onClick={() => setAuthOpen(true)}>Sign in</button>
           )}
