@@ -12,9 +12,9 @@
  * not checkout, which stays distraction-free). Only renders once signed
  * in, since there's nothing to show a guest.
  *
- * PINNED TOP-RIGHT, per instruction, sitting to the right of ProfileLink in
- * the same row (both `top`-anchored, this one closer to the corner) — see
- * ProfileLink.jsx for the matching offset.
+ * PINNED BOTTOM-RIGHT, per instruction, stacked directly above the chat
+ * launcher in that same corner (see HippoChatLauncher.jsx for the matching
+ * offset) — Profile now sits alone at the top-right.
  *
  * No store id to carry — MySubscriptions.jsx lists every teacher's classes
  * in one call (see its own header note on why `user_id` isn't a real scope
@@ -53,7 +53,7 @@ export default function MyCoursesLink() {
 
 const css = `
 .mcl{
-  position:fixed; z-index:30; top:76px; right:18px;
+  position:fixed; z-index:30; bottom:70px; right:18px;
   display:inline-flex; align-items:center; gap:7px;
   padding:11px 16px; border-radius:980px;
   background:var(--brand-accent); color:var(--brand-accent-ink);
@@ -63,5 +63,5 @@ const css = `
 }
 .mcl:hover{ filter:brightness(1.06); transform:translateY(-1px); }
 .mcl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
-@media (max-width:560px){ .mcl{ top:70px; right:14px; padding:9px 12px; font-size:.76rem; } }
+@media (max-width:560px){ .mcl{ bottom:64px; right:14px; padding:9px 12px; font-size:.76rem; } }
 `;
