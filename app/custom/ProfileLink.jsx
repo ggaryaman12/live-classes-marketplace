@@ -8,9 +8,9 @@
  * node to swap it for, and no prop this build can pass it to move "Sign out"
  * elsewhere or make the name a link. This is the nearest real workaround: a
  * small, fixed, always-reachable tab on the pages a parent actually browses
- * from — pinned top-right, under the real header, sitting to the LEFT of
- * MyCoursesLink in the same row (see that file for the matching offset) so
- * neither covers the other. Only renders once signed in.
+ * from — pinned top-right, under the real header. MyCoursesLink moved to
+ * the bottom-right corner (stacked above the chat launcher) per instruction,
+ * so this now sits alone in the top-right row. Only renders once signed in.
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -43,7 +43,7 @@ export default function ProfileLink() {
 
 const css = `
 .pfl{
-  position:fixed; z-index:30; top:76px; right:148px;
+  position:fixed; z-index:30; top:76px; right:18px;
   display:inline-flex; align-items:center; gap:7px;
   padding:11px 16px; border-radius:980px;
   background:var(--brand-surface); color:var(--brand-ink);
@@ -54,6 +54,6 @@ const css = `
 }
 .pfl:hover{ border-color:var(--brand-accent); color:var(--brand-accent); transform:translateY(-1px); }
 .pfl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
-@media (max-width:560px){ .pfl{ top:70px; right:118px; padding:9px 12px; font-size:.76rem; } }
+@media (max-width:560px){ .pfl{ top:70px; right:14px; padding:9px 12px; font-size:.76rem; } }
 @media (prefers-reduced-motion:reduce){ .pfl:hover{ transform:none; } }
 `;
