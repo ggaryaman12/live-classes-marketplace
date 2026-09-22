@@ -176,7 +176,7 @@ function ClassDetailInner({
 }) {
   const params = useSearchParams();
   const router = useRouter();
-  const { add, setQty } = useCart();
+  const { items: cartItems, add, setQty } = useCart();
   const id = params.get("id");
 
   const [tab, setTab] = useState(TABS[0]);
@@ -184,6 +184,7 @@ function ClassDetailInner({
   const [expanded, setExpanded] = useState({});
   const [tz, setTz] = useState("your local time");
   const [cls, setCls] = useState(id ? null : SAMPLE_CLASS);
+  const [cartBlockedMsg, setCartBlockedMsg] = useState("");
 
   useEffect(() => {
     if (!document.querySelector("link[data-bell-fonts]")) {
@@ -267,6 +268,15 @@ function ClassDetailInner({
       if (target) router.push(target);
       return;
     }
+    // Per instruction: one class per order, always — the same rule enforced
+    // in the cart drawer and the store's catalogue. A different class
+    // already in the cart blocks this one rather than silently adding
+    // alongside it.
+    if (cartItems.length > 0 && cartItems.some((it) => it.id !== cls.productId)) {
+      setCartBlockedMsg("This teacher only accepts one class per order — clear your cart before enrolling in this class.");
+      return;
+    }
+    setCartBlockedMsg("");
     add(
       { id: cls.teacherId, name: cls.teacher },
       { id: cls.productId, name: cls.title, price: cls.price, image: cls.img }
@@ -297,6 +307,7 @@ function ClassDetailInner({
           <div className="cd-main">
             {cls.isSample && <p className="cd-subject">{cls.subject}</p>}
             <h1 className="cd-title">{cls.title}</h1>
+            {cartBlockedMsg && <p className="cd-cart-blocked" role="alert">{cartBlockedMsg}</p>}
 
             <div className="cd-meta">
               {cls.teacherId ? (
@@ -681,6 +692,7 @@ const css = `
   transition:filter var(--motion) var(--motion-ease);
 }
 .cd-side-primary:hover{ filter:brightness(1.06); }
+.cd-cart-blocked{ margin:10px 0 0; font-size:.82rem; color:#c0392b; line-height:1.4; }
 .cd-side-cta{
   display:block; width:100%; text-align:center; padding:13px; border-radius:var(--radius); border:0;
   background:var(--brand-accent-soft); color:var(--brand-accent); cursor:pointer;
