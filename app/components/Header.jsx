@@ -8,11 +8,6 @@ import { getSession, clearSession } from '../lib/session';
 import AuthModal from './AuthModal';
 import CartSheet from './CartSheet';
 
-// This is a client component, so only NEXT_PUBLIC_* reaches the browser bundle and
-// it is inlined at BUILD time — which is why the export writes both forms into
-// .env.local and previewPool sets both in the build env. See app/lib/siteName.js.
-const SITE_NAME = (process.env.NEXT_PUBLIC_SITE_NAME || '').replace(/\s+/g, ' ').trim() || 'Storefront';
-
 export default function Header() {
   const { count } = useCart();
   const [session, setSess] = useState(null);
@@ -29,11 +24,7 @@ export default function Header() {
   return (
     <>
       <header className="hd">
-        {/* The project's own name, not a hardcoded wordmark. This line said
-            "market." for every storefront ever built, and because a new project now
-            starts with this starter header until the build designs its own, it was
-            the first thing a person saw. See app/lib/siteName.js. */}
-        <Link href="/" className="hd-logo">{SITE_NAME}</Link>
+        <Link href="/" className="hd-logo">market<span>.</span></Link>
         <nav className="hd-nav">
           <Link href="/">Browse</Link>
           <a href="#">Help</a>
