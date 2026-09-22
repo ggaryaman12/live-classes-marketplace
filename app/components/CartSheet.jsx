@@ -1,48 +1,11 @@
 'use client';
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCart } from '../lib/cart';
 import { getSession } from '../lib/session';
 
-const YELO_BASE = 'https://test-api-3025.jungleworks.com';
-const YELO_TENANT = {
-  marketplace_user_id: 510009445,
-  marketplace_reference_id: '7a57517ff024ea5715497555a297e86c',
-  domain_name: 'deliverecttest.devweb1.yelo.red',
-  dual_user_key: 0,
-  language: 'en',
-};
-
 export default function CartSheet({ open, onClose, onSignIn }) {
   const { items, storeName, subtotal, count, setQty, clear, pendingSwitch, confirmSwitch, cancelSwitch } = useCart();
   const router = useRouter();
-  // Real merchant setting ("Product Multiselection" in the dashboard) —
-  // traced to yelo-server: product_multi_select 0 means a customer may only
-  // ever hold ONE of a given class per order (server rejects qty>1 outright
-  // at order time with CAN_NOT_SELECT_MULTIPLE_QUANTITY), and the real
-  // marketplace webapp's own cart reflects that by swapping the +/- stepper
-  // for a single "Remove" action per line (app-cart.html — product.type 1 =
-  // ADD-only). Defaults to permissive (1) so a failed fetch never wrongly
-  // hides quantity control the merchant actually allows.
-  const [productMultiSelect, setProductMultiSelect] = useState(1);
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`${YELO_BASE}/marketplace_fetch_app_configuration`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', base_version: '1.0.0', device_type: 'WEB' },
-      body: JSON.stringify(YELO_TENANT),
-    })
-      .then((r) => r.json())
-      .then((j) => {
-        if (cancelled) return;
-        if (j?.status === 200 && j?.data?.product_multi_select != null) {
-          setProductMultiSelect(Number(j.data.product_multi_select));
-        }
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-  const singleQtyOnly = productMultiSelect === 0;
 
   function checkout() {
     if (!getSession()) { onSignIn?.(); return; }
@@ -77,15 +40,10 @@ export default function CartSheet({ open, onClose, onSignIn }) {
                     <div className="ci-name">{it.name}</div>
                     <div className="ci-price">₹{it.price}</div>
                   </div>
-                  {singleQtyOnly ? (
-                    <button className="ci-remove" onClick={() => setQty(it.id, 0)}>Remove</button>
-                  ) : (
-                    <div className="ci-qty">
-                      <button onClick={() => setQty(it.id, it.qty - 1)}>−</button>
-                      <span>{it.qty}</span>
-                      <button onClick={() => setQty(it.id, it.qty + 1)}>+</button>
-                    </div>
-                  )}
+                  {/* Per instruction: a class enrollment isn't something a
+                     parent buys "2 of" — no +/- stepper, ever. One tap takes
+                     the whole line out of the cart. */}
+                  <button className="ci-remove" onClick={() => setQty(it.id, 0)}>Remove</button>
                 </div>
               ))}
             </div>
