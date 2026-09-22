@@ -1,18 +1,10 @@
 'use client';
 /**
- * Profile — the page ProfileLink.jsx points at. Shows the real signed-in
- * customer (name, email, phone — the same `../lib/session` contract the
- * rest of this storefront already relies on) and is where "Sign out" now
- * lives, per the instruction to move it out of the header.
- *
- * SIGN OUT HERE, NOT REMOVED FROM THE HEADER: the header ("Hi, {name}" /
- * "Sign out") is `app/components/Header.jsx`, shared platform chrome
- * rendered directly in the root layout — outside this tenant's workspace,
- * with no page-tree node to swap it for (see CLAUDE.md boundaries; the same
- * limitation ProfileLink.jsx already documents). This build can't remove
- * a button from a file it isn't allowed to edit. What it CAN do — and does
- * — is give "sign out" a real second home here, so a parent who reaches
- * their profile through this page never needs the header's own button.
+ * Profile — the page the header's own "Hi, {name}" now links straight to
+ * (see chrome/Header.jsx). Shows the real signed-in customer (name, email,
+ * phone — the same `../lib/session` contract the rest of this storefront
+ * already relies on) and is where "Sign out" also lives as a second, always
+ * -reachable home for it.
  *
  * SIGNED-OUT STATE ALSO HOSTS A REAL SIGNUP FORM (CreateAccount.jsx) — the
  * header's own "Create account" was silently failing every real attempt
