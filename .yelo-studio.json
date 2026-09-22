@@ -9,7 +9,20 @@
     "tokens": "app/custom/tokens.css"
   },
   "wrote": {
-    "components": [],
+    "components": [
+      "AuthModal.jsx",
+      "BillLines.jsx",
+      "CartSheet.jsx",
+      "Catalogue.jsx",
+      "CheckoutPanel.jsx",
+      "EntrySequence.jsx",
+      "Header.jsx",
+      "Hero3DSection.jsx",
+      "HeroScene.jsx",
+      "OrderReceipt.jsx",
+      "StoreCard.jsx",
+      "StoreHeader.jsx"
+    ],
     "custom": [
       "BellHero.jsx",
       "ClassCheckout.jsx",
