@@ -89,8 +89,8 @@ const PRESETS = [
   { key: "fortnight", label: "Fortnight", days: null, cycle: 15 },
   { key: "monthly", label: "Monthly", days: null, cycle: 30 },
 ];
-// Shared by both places this file can decline to add to the cart under the
-// merchant's real "one class per order" setting (see multipleProductSingleCart).
+// Shared by both places this file can decline to add to the cart — one
+// class per order, always (see the blockedByCartRule note below).
 const cartBlockCss = `
 .sub-cart-block{
   max-width:640px; margin:0 auto; padding:16px 18px; border-radius:var(--radius-lg, 12px);
@@ -213,53 +213,6 @@ function SubscribeSchedulerInner() {
     }
   }, [cart.ready, cart.items.length, router]);
 
-  // Real merchant config, read live from marketplace_fetch_app_configuration
-  // (confirmed present there: product_multi_select, multiple_product_single_cart
-  // — the exact two toggles the merchant dashboard calls "Product
-  // Multiselection" and "Multiple products/services in single cart").
-  // MULTIPLE_PRODUCT_SINGLE_CART is a real enum, not a boolean: 1 = MULTIPLE
-  // (any number of different classes in one order), 2 = SINGLE (only one
-  // class per order) — traced to yelo-server properties/constants.js.
-  // Verified this restriction is enforced ONLY client-side in the real
-  // marketplace webapp (app-product.component.ts addCartManipulation) — the
-  // real backend accepts a multi-item order either way — so replicating it
-  // here, at the only two places this build ever adds to the cart, is the
-  // actual fix, not a nice-to-have. Defaults to permissive (1) so a failed
-  // fetch never wrongly blocks a real enrollment.
-  const [multipleProductSingleCart, setMultipleProductSingleCart] = useState(1);
-  // THE RACE THIS CLOSES: `multipleProductSingleCart` starts at the
-  // permissive default (1) until this fetch resolves — but OneTimeAutoEnroll
-  // below adds to the cart from its OWN effect the instant it mounts, which
-  // fires within the same tick as this one. Trusting the default while the
-  // real value was still in flight meant the block never engaged in time:
-  // the item was already added before the "actually restricted" answer
-  // arrived. `configReady` makes "don't know yet" its own state, distinct
-  // from "known permissive" — nothing adds to the cart until this settles,
-  // one way or the other.
-  const [configReady, setConfigReady] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`${YELO_BASE}/marketplace_fetch_app_configuration`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", base_version: "1.0.0", device_type: "WEB" },
-      body: JSON.stringify(YELO_TENANT),
-    })
-      .then((r) => r.json())
-      .then((j) => {
-        if (cancelled) return;
-        if (j?.status === 200 && j?.data?.multiple_product_single_cart != null) {
-          setMultipleProductSingleCart(Number(j.data.multiple_product_single_cart));
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setConfigReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // THE BUG THIS CATCHES: the cart's own "Go to checkout" button (shared site
   // chrome, not built here) just sends the browser to bare `/checkout` — no
   // `product` id, no schedule. That's fine for a one-time class (nothing to
@@ -378,8 +331,6 @@ function SubscribeSchedulerInner() {
     storeUserId: product.user_id,
     storeName: product.store_name || "This teacher",
     productImage: product.image_url || "",
-    multipleProductSingleCart,
-    configReady,
   };
 
   if (product.is_recurring_enabled !== 1) {
@@ -392,23 +343,16 @@ function SubscribeSchedulerInner() {
 // needs to land in the cart so the payment step below has something to show.
 // Adds itself once (a ref guard, since the product/session effects this sits
 // beside can re-render) and renders nothing.
-function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeName, productImage, multipleProductSingleCart, configReady }) {
+function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeName, productImage }) {
   const { items, add, setQty } = useCart();
   const added = useRef(false);
-  // Real rule: "Multiple products/services in single cart" set to SINGLE (2)
-  // means one class per order, full stop — verified this is what the real
-  // marketplace webapp actually blocks on, not just quantity. A different
-  // product already sitting in the cart means this one can't be silently
-  // added alongside it.
-  const blockedByCartRule =
-    multipleProductSingleCart === 2 && items.length > 0 && items.some((it) => it.id !== productId);
+  // Per instruction: one class per order, always — not conditional on any
+  // merchant setting. A different product already sitting in the cart means
+  // this one can't be silently added alongside it.
+  const blockedByCartRule = items.length > 0 && items.some((it) => it.id !== productId);
 
   useEffect(() => {
-    // Wait for the real config before ever adding — see configReady's
-    // comment in the parent. Without this, the add below (which fires the
-    // instant this mounts) always ran on the still-loading, permissive
-    // default, so the rule never actually got a chance to block anything.
-    if (added.current || blockedByCartRule || !configReady) return;
+    if (added.current || blockedByCartRule) return;
     added.current = true;
     add(
       { id: storeUserId, name: storeName },
@@ -416,7 +360,7 @@ function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeNa
     );
     setQty(productId, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, storeUserId, blockedByCartRule, configReady]);
+  }, [productId, storeUserId, blockedByCartRule]);
 
   if (blockedByCartRule) {
     return (
@@ -433,7 +377,7 @@ function OneTimeAutoEnroll({ productId, productName, price, storeUserId, storeNa
   return null;
 }
 
-function SubscribePicker({ productId, productName, price, storeUserId, storeName, productImage, multipleProductSingleCart, configReady }) {
+function SubscribePicker({ productId, productName, price, storeUserId, storeName, productImage }) {
   const router = useRouter();
   const params = useSearchParams();
   const { items, add, setQty } = useCart();
@@ -441,8 +385,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   // Same real "one class per order" rule OneTimeAutoEnroll enforces (see its
   // comment) — checked here too since this is the OTHER of the only two
   // places this build ever adds to the cart.
-  const blockedByCartRule =
-    multipleProductSingleCart === 2 && items.length > 0 && items.some((it) => it.id !== productId);
+  const blockedByCartRule = items.length > 0 && items.some((it) => it.id !== productId);
 
   useEffect(() => {
     setSession(getSession());
@@ -661,7 +604,7 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
   }, [days, date, time, occurrences, preset, daysDisabled, storeUserId, productId, price, session]);
 
   const proceed = () => {
-    if (blockedByCartRule || !configReady) return;
+    if (blockedByCartRule) return;
     // Populate the real, shared cart (single-merchant — the same `useCart()`
     // CheckoutPanel reads) so checkout actually has this class in it, instead
     // of relying only on URL params RecurringSummary displays.
@@ -852,13 +795,10 @@ function SubscribePicker({ productId, productName, price, storeUserId, storeName
           // the backend checks schedule_time against its own configured
           // slots exactly, so a subscription built on a guess is rejected at
           // save time ("Order date time is not available") instead of here,
-          // where it's still fixable. Block it before that happens. Also
-          // held until the real "one class per order" config is in hand and
-          // confirms clear (see configReady/blockedByCartRule) — otherwise
-          // this could add a second class a beat before the rule ever loads.
-          disabled={!days.length || !time || slotState === "fallback" || !configReady || blockedByCartRule}
+          // where it's still fixable. Block it before that happens.
+          disabled={!days.length || !time || slotState === "fallback" || blockedByCartRule}
         >
-          {!configReady ? "Checking…" : "Proceed to pay"}
+          Proceed to pay
         </button>
       </aside>
 
