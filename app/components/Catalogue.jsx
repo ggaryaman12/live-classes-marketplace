@@ -62,6 +62,11 @@ export default function Catalogue({ store, sections, layout = 'sidebar', showIma
                   {c.products.map((p) => {
                     const q = qtyOf[p.id] || 0;
                     const blocked = !canOrder || p.available === false;
+                    // Per instruction: one class per order, always — a
+                    // different product already in the cart blocks adding
+                    // this one, the same rule enforced on the class page's
+                    // own "Enroll now" and in the cart drawer.
+                    const otherInCart = q === 0 && items.length > 0 && items.some((it) => it.id !== p.id);
                     return (
                       <div className={`pc ${blocked ? 'is-blocked' : ''}`} key={p.id}>
                         <div className="pc-body">
@@ -72,19 +77,20 @@ export default function Catalogue({ store, sections, layout = 'sidebar', showIma
                           <div className="pc-price">₹{p.price}</div>
                           {p.description && <p className="pc-desc">{p.description}</p>}
                           {p.available === false && <span className="pc-unavail">Unavailable right now</span>}
+                          {otherInCart && <span className="pc-unavail">Only one class per order — clear your cart first</span>}
                         </div>
                         <div className={`pc-media ${showImages ? '' : 'no-img'}`}>
                           {showImages && (p.image ? <img src={p.image} alt="" loading="lazy" /> : <div className="pc-media-ph">{p.name.slice(0, 1)}</div>)}
                           {blocked ? (
                             <button className="pc-add is-off" disabled title={!canOrder ? 'Store is closed' : 'Item unavailable'}>ADD</button>
+                          ) : otherInCart ? (
+                            <button className="pc-add is-off" disabled title="Only one class per order — clear your cart first">ADD</button>
                           ) : q === 0 ? (
                             <button className="pc-add" onClick={() => add(store, p)}>ADD</button>
                           ) : (
-                            <div className="pc-step">
-                              <button onClick={() => setQty(p.id, q - 1)} aria-label="Decrease">−</button>
-                              <span>{q}</span>
-                              <button onClick={() => setQty(p.id, q + 1)} aria-label="Increase">+</button>
-                            </div>
+                            // Per instruction: no +/- stepper anywhere in the
+                            // cart — a class enrollment isn't bought "2 of".
+                            <button className="pc-add is-remove" onClick={() => setQty(p.id, 0)}>Remove</button>
                           )}
                         </div>
                       </div>
@@ -96,6 +102,9 @@ export default function Catalogue({ store, sections, layout = 'sidebar', showIma
           ))}
         </div>
       </div>
+      <style>{`
+        .pc-add.is-remove:hover{ background:#c0392b; border-color:#c0392b; color:#fff; }
+      `}</style>
     </>
   );
 }
