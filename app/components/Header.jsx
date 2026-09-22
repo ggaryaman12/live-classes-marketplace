@@ -24,7 +24,14 @@ export default function Header() {
   return (
     <>
       <header className="hd">
-        <Link href="/" className="hd-logo">market<span>.</span></Link>
+        <Link href="/" className="hd-logo">
+          <img
+            src="https://spark-studio-india-bkt.s3.ap-south-1.amazonaws.com/assets-sparkstudio-co/staging/sparkLogo.png"
+            alt="Spark Studio"
+            height="34"
+            style={{ height: 34, width: 'auto', display: 'block' }}
+          />
+        </Link>
         <nav className="hd-nav">
           <Link href="/">Browse</Link>
           <a href="#">Help</a>
@@ -45,6 +52,14 @@ export default function Header() {
 
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onAuthed={() => { setAuthOpen(false); }} />
       <CartSheet open={cartOpen} onClose={() => setCartOpen(false)} onSignIn={() => { setCartOpen(false); setAuthOpen(true); }} />
+      <style>{`
+        /* .hd-logo's shared rule (globals.css) is text-sizing only, meant
+           for the old "market." wordmark — harmless left in place, but this
+           component needs its own layout rule so the logo image centers
+           correctly in the 60px header bar rather than sitting on its
+           default inline baseline. */
+        .hd .hd-logo{display:inline-flex;align-items:center}
+      `}</style>
     </>
   );
 }
