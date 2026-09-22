@@ -186,6 +186,18 @@ function ClassDetailInner({
   const [cls, setCls] = useState(id ? null : SAMPLE_CLASS);
   const [cartBlockedMsg, setCartBlockedMsg] = useState("");
 
+  // A one-class-per-order block is a transient thing that just happened, not
+  // a persistent page state — a toast reads as "here's what just happened"
+  // and gets out of the way; the old static paragraph sat under the title
+  // until the next click, competing with the actual class info for
+  // attention. Auto-dismisses; a manual close is still there for anyone who
+  // wants it gone sooner.
+  useEffect(() => {
+    if (!cartBlockedMsg) return;
+    const t = setTimeout(() => setCartBlockedMsg(""), 5000);
+    return () => clearTimeout(t);
+  }, [cartBlockedMsg]);
+
   useEffect(() => {
     if (!document.querySelector("link[data-bell-fonts]")) {
       const l = document.createElement("link");
@@ -307,7 +319,6 @@ function ClassDetailInner({
           <div className="cd-main">
             {cls.isSample && <p className="cd-subject">{cls.subject}</p>}
             <h1 className="cd-title">{cls.title}</h1>
-            {cartBlockedMsg && <p className="cd-cart-blocked" role="alert">{cartBlockedMsg}</p>}
 
             <div className="cd-meta">
               {cls.teacherId ? (
@@ -544,6 +555,13 @@ function ClassDetailInner({
         )}
       </div>
 
+      {cartBlockedMsg && (
+        <div className="cd-toast" role="alert">
+          <span>{cartBlockedMsg}</span>
+          <button type="button" onClick={() => setCartBlockedMsg("")} aria-label="Dismiss">×</button>
+        </div>
+      )}
+
       <style>{css}</style>
     </section>
   );
@@ -692,7 +710,19 @@ const css = `
   transition:filter var(--motion) var(--motion-ease);
 }
 .cd-side-primary:hover{ filter:brightness(1.06); }
-.cd-cart-blocked{ margin:10px 0 0; font-size:.82rem; color:#c0392b; line-height:1.4; }
+.cd-toast{
+  position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+  z-index:60; display:flex; align-items:center; gap:14px; max-width:min(92vw,440px);
+  padding:13px 16px; border-radius:var(--radius); background:#c0392b; color:#fff;
+  font-family:var(--brand-font-body); font-size:.86rem; line-height:1.4;
+  box-shadow:0 12px 30px -10px color-mix(in srgb, #c0392b 60%, transparent);
+  animation:cd-toast-in .25s var(--motion-ease);
+}
+.cd-toast button{ flex:none; background:none; border:0; color:#fff; font-size:18px; line-height:1; cursor:pointer; opacity:.85; }
+.cd-toast button:hover{ opacity:1; }
+@media (max-width:899px){ .cd-toast{ bottom:88px; } }
+@keyframes cd-toast-in{ from{ opacity:0; transform:translate(-50%,10px); } to{ opacity:1; transform:translate(-50%,0); } }
+@media (prefers-reduced-motion: reduce){ .cd-toast{ animation:none; } }
 .cd-side-cta{
   display:block; width:100%; text-align:center; padding:13px; border-radius:var(--radius); border:0;
   background:var(--brand-accent-soft); color:var(--brand-accent); cursor:pointer;
