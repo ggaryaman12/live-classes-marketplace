@@ -1,10 +1,9 @@
 'use client';
 /**
  * CreateAccount — a real, working signup form. Built because the header's
- * own "Create account" (AuthModal.jsx, shared platform chrome outside this
- * workspace — see ProfileLink.jsx for the same boundary) was failing every
- * real attempt with a generic "Can not process your request at this
- * moment," and this traced the actual cause instead of guessing:
+ * own "Create account" (chrome/AuthModal.jsx) was failing every real attempt
+ * with a generic "Can not process your request at this moment," and this
+ * traced the actual cause instead of guessing:
  *
  *  1. `marketplace_vendor_signup`'s handler treats `first_name` as the one
  *     truly mandatory name field (routes/marketplace.js:5991,6052-6058 —

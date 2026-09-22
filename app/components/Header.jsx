@@ -37,7 +37,7 @@ export default function Header() {
           <a href="#">Help</a>
           {session ? (
             <span className="hd-account">
-              <span className="hd-hi">Hi, {session.name?.split(' ')[0] || 'there'}</span>
+              <Link href="/p/profile" className="hd-hi">Hi, {session.name?.split(' ')[0] || 'there'}</Link>
               <button className="hd-link" onClick={() => { clearSession(); }}>Sign out</button>
             </span>
           ) : (
@@ -59,6 +59,12 @@ export default function Header() {
            correctly in the 60px header bar rather than sitting on its
            default inline baseline. */
         .hd .hd-logo{display:inline-flex;align-items:center}
+        /* .hd-hi (globals.css) only sets size/weight, written for a plain
+           span. Now that it's a real link to the profile page, it needs its
+           own no-underline + hover treatment so it doesn't pick up default
+           anchor styling nobody asked for. */
+        .hd .hd-hi{text-decoration:none;color:inherit}
+        .hd .hd-hi:hover{color:var(--brand);text-decoration:underline}
       `}</style>
     </>
   );
