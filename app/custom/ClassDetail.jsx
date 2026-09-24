@@ -747,6 +747,10 @@ const css = `
   font-family:var(--brand-font-display); font-weight:600; text-decoration:none; font-size:.9rem;
 }
 @media (max-width:899px){ .bell-cd{ padding-bottom:96px; } }
+/* The fixed Enroll bar owns the bottom edge on phones/tablets — lift the
+   floating "My courses" / "Chat with us" buttons above it so they never
+   cover the Enroll button (they read --float-lift; 0 everywhere else). */
+@media (max-width:899px){ body:has(.cd-mobilebar){ --float-lift:calc(74px + env(safe-area-inset-bottom)); } }
 
 .bell-cd :is(a,button):focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 `;
