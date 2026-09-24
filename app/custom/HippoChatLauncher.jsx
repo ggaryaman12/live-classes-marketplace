@@ -108,6 +108,7 @@ export default function HippoChatLauncher() {
   const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false); // the chat panel is showing
   const cfgRef = useRef(null);  // the tenant's chat config, once fetched
   const initRef = useRef(null); // the boot promise, restarted only if the widget was torn down
 
@@ -133,7 +134,32 @@ export default function HippoChatLauncher() {
     return () => { cancelled = true; };
   }, []);
 
+  // Track whether the panel is really showing, so this button can double as a
+  // reliable "Close chat" (the widget's own round × can be small or covered).
+  useEffect(() => {
+    if (!ready) return;
+    const sync = () => setChatOpen(panelOpen());
+    const id = setInterval(sync, 500);
+    sync();
+    return () => clearInterval(id);
+  }, [ready]);
+
+  function close() {
+    try {
+      if (typeof window.fuguWidget_Collapse === 'function') window.fuguWidget_Collapse();
+    } catch {
+      /* fall through to the direct collapse below */
+    }
+    // Belt and braces: collapse the iframes ourselves too, exactly as the
+    // widget does on its own Collapse message.
+    ['iframe_fuguWidgetContent', 'iframe_fuguWidget'].forEach((id) => {
+      document.getElementById(id)?.classList.add('collapsed');
+    });
+    setChatOpen(false);
+  }
+
   async function open() {
+    if (chatOpen) return close();
     if (opening) return;
     setOpening(true);
     setFailed(false);
@@ -158,6 +184,7 @@ export default function HippoChatLauncher() {
       /* widget failed to load or init */
     }
     setOpening(false);
+    if (opened) setChatOpen(true);
     if (!opened) {
       setFailed(true);
       setTimeout(() => setFailed(false), 6000);
@@ -172,7 +199,7 @@ export default function HippoChatLauncher() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
         </svg>
-        {opening ? 'Connecting…' : 'Chat with us'}
+        {opening ? 'Connecting…' : chatOpen ? 'Close chat' : 'Chat with us'}
       </button>
       {failed && (
         <p className="hcl-note" role="status">Chat isn't reachable right now. Please try again in a moment.</p>
@@ -200,11 +227,12 @@ const css = `
   font-family:var(--brand-font-body); font-size:.82rem;
   box-shadow:0 6px 18px color-mix(in srgb, var(--brand-ink) 22%, transparent);
 }
-/* The widget's own launcher iframe is never wanted (our button is the only
-   trigger) and, sitting fixed at the bottom-right with a huge z-index, it can
-   swallow taps meant for the Enroll bar and this button. Keep it — and the
-   chat panel while collapsed — out of hit-testing entirely. */
-html body iframe#iframe_fuguWidget{ display:none !important; pointer-events:none !important; }
+/* While the chat is COLLAPSED the widget's launcher/panel iframes must be out
+   of hit-testing — sitting fixed at the bottom-right with a huge z-index they
+   can swallow taps meant for the Enroll bar and this button. Scoped to
+   .collapsed on purpose: when the chat is OPEN the widget's own round × has to
+   stay clickable (a blanket pointer-events:none here once made it unclosable). */
+html body iframe#iframe_fuguWidget.collapsed,
 html body iframe#iframe_fuguWidgetContent.collapsed{ display:none !important; pointer-events:none !important; }
 .hcl:hover{ filter:brightness(1.06); transform:translateY(-1px); }
 .hcl:disabled{ opacity:.7; cursor:default; transform:none; }
