@@ -41,6 +41,14 @@ export default function Header() {
         <nav className="hd-nav">
           {!onHome && <Link href="/">Home</Link>}
           {!onClasses && <Link href="/stores">Explore Courses</Link>}
+          {session?.vendorId && (
+            <Link href="/p/my-subscriptions" className="hd-mine" aria-label="My courses">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" />
+              </svg>
+              <span>My courses</span>
+            </Link>
+          )}
           {session ? (
             // Per instruction: no "Sign out" here — signing out now lives on
             // the profile page only, one click away via "Hi, {name}" below.
@@ -70,6 +78,17 @@ export default function Header() {
            anchor styling nobody asked for. */
         .hd .hd-hi{text-decoration:none;color:inherit}
         .hd .hd-hi:hover{color:var(--brand);text-decoration:underline}
+        /* "My courses" lives in the header now (it used to float bottom-right
+           and collide with "Chat with us"). Plain nav link + small calendar
+           icon; on phones it collapses to the icon alone so the bar still fits. */
+        .hd .hd-mine{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:inherit;min-height:44px}
+        .hd .hd-mine:hover{color:var(--brand)}
+        .hd .hd-nav > *{white-space:nowrap}
+        @media (max-width:640px){
+          .hd .hd-mine span{display:none}
+          .hd .hd-mine{justify-content:center;min-width:32px}
+          .hd .hd-nav{gap:10px;font-size:.85rem}
+        }
       `}</style>
     </>
   );

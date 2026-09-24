@@ -14,7 +14,6 @@
         "teachersLede",
         "grid",
         "trust",
-        "myCourses",
         "chat"
       ]
     },
@@ -72,13 +71,6 @@
         "heading": "Enough to feel good about handing over the tablet",
         "browseHref": "/stores",
         "classHref": "/p/class"
-      }
-    },
-    "myCourses": {
-      "id": "myCourses",
-      "type": "Custom",
-      "props": {
-        "component": "MyCoursesLink"
       }
     },
     "chat": {
