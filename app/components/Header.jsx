@@ -40,7 +40,7 @@ export default function Header() {
         </Link>
         <nav className="hd-nav">
           {!onHome && <Link href="/">Home</Link>}
-          {!onClasses && <Link href="/stores">Classes</Link>}
+          {!onClasses && <Link href="/stores">Explore Courses</Link>}
           <a href="#">Help</a>
           {session ? (
             // Per instruction: no "Sign out" here — signing out now lives on
