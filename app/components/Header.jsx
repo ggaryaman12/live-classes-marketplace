@@ -2,6 +2,7 @@
 // Sticky header: brand, location, auth, cart. Cart button opens the slide-over.
 // Typed + self-contained → maps to a { type:'Header' } component-JSON node.
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useCart } from '../lib/cart';
 import { getSession } from '../lib/session';
@@ -13,6 +14,11 @@ export default function Header() {
   const [session, setSess] = useState(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  // Nav shows the link to wherever you are NOT: home → Classes only,
+  // Classes page → Home only, every other page → both.
+  const path = usePathname() || '/';
+  const onHome = path === '/';
+  const onClasses = path === '/stores' || path.startsWith('/stores/');
 
   useEffect(() => {
     const sync = () => setSess(getSession());
@@ -33,7 +39,8 @@ export default function Header() {
           />
         </Link>
         <nav className="hd-nav">
-          <Link href="/stores">Classes</Link>
+          {!onHome && <Link href="/">Home</Link>}
+          {!onClasses && <Link href="/stores">Classes</Link>}
           <a href="#">Help</a>
           {session ? (
             // Per instruction: no "Sign out" here — signing out now lives on
