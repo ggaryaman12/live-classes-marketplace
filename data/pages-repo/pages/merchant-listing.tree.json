@@ -7,7 +7,11 @@
       "id": "p1",
       "type": "Page",
       "props": {},
-      "children": ["hero", "search", "myCourses", "chat"]
+      "children": [
+        "hero",
+        "search",
+        "chat"
+      ]
     },
     "hero": {
       "id": "hero",
@@ -24,13 +28,6 @@
       "props": {
         "component": "ClassSearch",
         "heading": "Live classes"
-      }
-    },
-    "myCourses": {
-      "id": "myCourses",
-      "type": "Custom",
-      "props": {
-        "component": "MyCoursesLink"
       }
     },
     "chat": {

@@ -14,7 +14,6 @@
         "reviews",
         "faq",
         "trust",
-        "myCourses",
         "chat"
       ]
     },
@@ -68,13 +67,6 @@
         "component": "TeacherTrust",
         "heading": "Enrolling with this teacher",
         "browseHref": "/stores"
-      }
-    },
-    "myCourses": {
-      "id": "myCourses",
-      "type": "Custom",
-      "props": {
-        "component": "MyCoursesLink"
       }
     },
     "chat": {
