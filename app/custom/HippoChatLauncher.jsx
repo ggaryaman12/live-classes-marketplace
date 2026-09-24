@@ -70,10 +70,46 @@ function loadHippoScript() {
   });
 }
 
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// The widget's own functions (startConversation & co) silently do NOTHING
+// until it reports "SetupComplete" — which fires the fuguInit callback. The old
+// code gave up waiting after 4s and called startConversation anyway, so on a
+// slow phone/tablet connection the tap was swallowed with no feedback ("chat
+// not working"). Now: wait for the real callback (capped), and keep retrying
+// the open until the widget panel is genuinely showing.
+function bootWidget(d) {
+  return loadHippoScript().then(
+    () =>
+      new Promise((resolve) => {
+        if (typeof window.fuguInit !== 'function') return resolve(false);
+        window.fuguInit({
+          appSecretKey: d.fugu_chat_token,
+          alwaysSkipBot: !d.is_fugu_bot_enabled,
+          language: d.language || 'en',
+          color: d.color || undefined,
+          tags: [`${d.form_name || 'Storefront'} Webapp`],
+          // 'completeHide' keeps the widget's own bubble invisible so our
+          // "Chat with us" button is the single trigger (see the header note).
+          collapseType: 'completeHide',
+          callback: () => resolve(true),
+        });
+        setTimeout(() => resolve(false), 20000);
+      })
+  );
+}
+
+const panelOpen = () => {
+  const f = document.getElementById('iframe_fuguWidgetContent');
+  return !!f && !f.classList.contains('collapsed');
+};
+
 export default function HippoChatLauncher() {
   const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(false);
-  const initRef = useRef(null); // the fuguInit() promise, started at most once
+  const [failed, setFailed] = useState(false);
+  const cfgRef = useRef(null);  // the tenant's chat config, once fetched
+  const initRef = useRef(null); // the boot promise, restarted only if the widget was torn down
 
   useEffect(() => {
     let cancelled = false;
@@ -87,37 +123,10 @@ export default function HippoChatLauncher() {
         if (cancelled) return;
         const d = j?.data;
         if (j?.status === 200 && d?.is_fugu_chat_enabled && d?.fugu_chat_token) {
+          cfgRef.current = d;
           setReady(true);
-          // Boot the widget now, same timing intent as the real client's
-          // app.component.ts — no reason to wait for a click when the config
-          // is already in hand, and startConversation needs this done first.
-          initRef.current = loadHippoScript().then(
-            () =>
-              new Promise((resolve) => {
-                if (typeof window.fuguInit !== 'function') return resolve(false);
-                window.fuguInit({
-                  appSecretKey: d.fugu_chat_token,
-                  alwaysSkipBot: !d.is_fugu_bot_enabled,
-                  language: d.language || 'en',
-                  color: d.color || undefined,
-                  tags: [`${d.form_name || 'Storefront'} Webapp`],
-                  // The widget draws its OWN floating bubble by default — a
-                  // real, reported bug: it landed bottom-right, overlapping
-                  // this build's own floating nav buttons, with a broken
-                  // image icon of its own. 'completeHide' is a real, confirmed option in
-                  // this exact script (widget-3002.js — every collapseType
-                  // branch checks for it) that keeps the widget fully
-                  // invisible until code calls `startConversation`, which is
-                  // exactly what the "Chat with us" button already does —
-                  // one trigger, not two competing ones.
-                  collapseType: 'completeHide',
-                  callback: () => resolve(true),
-                });
-                // Some widget builds never fire `callback` when there's
-                // nothing to announce — don't hang the first click forever.
-                setTimeout(() => resolve(true), 4000);
-              })
-          );
+          // Boot now, same timing intent as the real client's app.component.ts.
+          initRef.current = bootWidget(d);
         }
       })
       .catch(() => {});
@@ -125,28 +134,51 @@ export default function HippoChatLauncher() {
   }, []);
 
   async function open() {
+    if (opening) return;
     setOpening(true);
+    setFailed(false);
+    let opened = false;
     try {
+      // Closing the chat makes the widget destroy its iframes; boot it again.
+      if (!document.getElementById('iframe_fuguWidgetContent') && cfgRef.current) {
+        initRef.current = bootWidget(cfgRef.current);
+      }
       if (initRef.current) await initRef.current;
-      if (typeof window.startConversation === 'function') {
-        window.startConversation({});
+      const started = Date.now();
+      while (Date.now() - started < 12000) {
+        try {
+          if (typeof window.startConversation === 'function') window.startConversation({});
+        } catch {
+          /* widget mid-setup — retry */
+        }
+        await wait(400);
+        if (panelOpen()) { opened = true; break; }
       }
     } catch {
-      /* widget failed to load or init — nothing to open */
+      /* widget failed to load or init */
     }
     setOpening(false);
+    if (!opened) {
+      setFailed(true);
+      setTimeout(() => setFailed(false), 6000);
+    }
   }
 
   if (!ready) return null;
 
   return (
-    <button type="button" className="hcl" onClick={open} disabled={opening} aria-label="Chat with support">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-      </svg>
-      {opening ? 'Opening…' : 'Chat with us'}
+    <>
+      <button type="button" className="hcl" onClick={open} disabled={opening} aria-label="Chat with support">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+        </svg>
+        {opening ? 'Connecting…' : 'Chat with us'}
+      </button>
+      {failed && (
+        <p className="hcl-note" role="status">Chat isn't reachable right now. Please try again in a moment.</p>
+      )}
       <style>{css}</style>
-    </button>
+    </>
   );
 }
 
@@ -160,6 +192,20 @@ const css = `
   box-shadow:0 6px 18px color-mix(in srgb, var(--brand-ink) 22%, transparent);
   transition:transform var(--motion) var(--motion-ease), filter var(--motion) var(--motion-ease);
 }
+.hcl{ min-height:44px; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+.hcl-note{
+  position:fixed; z-index:31; right:18px; bottom:calc(72px + var(--float-lift, 0px));
+  margin:0; max-width:min(78vw,280px); padding:10px 14px; border-radius:var(--radius);
+  background:var(--brand-surface); color:var(--brand-ink); border:1px solid var(--brand-line);
+  font-family:var(--brand-font-body); font-size:.82rem;
+  box-shadow:0 6px 18px color-mix(in srgb, var(--brand-ink) 22%, transparent);
+}
+/* The widget's own launcher iframe is never wanted (our button is the only
+   trigger) and, sitting fixed at the bottom-right with a huge z-index, it can
+   swallow taps meant for the Enroll bar and this button. Keep it — and the
+   chat panel while collapsed — out of hit-testing entirely. */
+html body iframe#iframe_fuguWidget{ display:none !important; pointer-events:none !important; }
+html body iframe#iframe_fuguWidgetContent.collapsed{ display:none !important; pointer-events:none !important; }
 .hcl:hover{ filter:brightness(1.06); transform:translateY(-1px); }
 .hcl:disabled{ opacity:.7; cursor:default; transform:none; }
 .hcl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
