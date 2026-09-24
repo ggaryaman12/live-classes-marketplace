@@ -152,7 +152,7 @@ export default function HippoChatLauncher() {
 
 const css = `
 .hcl{
-  position:fixed; z-index:30; bottom:18px; right:18px;
+  position:fixed; z-index:30; bottom:calc(18px + var(--float-lift, 0px)); right:18px;
   display:inline-flex; align-items:center; gap:7px;
   padding:11px 16px; border-radius:980px; border:0; cursor:pointer;
   background:var(--brand-accent); color:var(--brand-accent-ink);
@@ -163,6 +163,6 @@ const css = `
 .hcl:hover{ filter:brightness(1.06); transform:translateY(-1px); }
 .hcl:disabled{ opacity:.7; cursor:default; transform:none; }
 .hcl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
-@media (max-width:560px){ .hcl{ bottom:14px; right:14px; padding:10px 14px; font-size:.8rem; } }
+@media (max-width:560px){ .hcl{ bottom:calc(14px + var(--float-lift, 0px)); right:14px; padding:10px 14px; font-size:.8rem; } }
 @media (prefers-reduced-motion:reduce){ .hcl:hover{ transform:none; } }
 `;
