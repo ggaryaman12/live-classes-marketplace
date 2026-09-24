@@ -53,7 +53,7 @@ export default function MyCoursesLink() {
 
 const css = `
 .mcl{
-  position:fixed; z-index:30; bottom:70px; right:18px;
+  position:fixed; z-index:30; bottom:calc(70px + var(--float-lift, 0px)); right:18px;
   display:inline-flex; align-items:center; gap:7px;
   padding:11px 16px; border-radius:980px;
   background:var(--brand-accent); color:var(--brand-accent-ink);
@@ -63,5 +63,5 @@ const css = `
 }
 .mcl:hover{ filter:brightness(1.06); transform:translateY(-1px); }
 .mcl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
-@media (max-width:560px){ .mcl{ bottom:64px; right:14px; padding:9px 12px; font-size:.76rem; } }
+@media (max-width:560px){ .mcl{ bottom:calc(64px + var(--float-lift, 0px)); right:14px; padding:9px 12px; font-size:.76rem; } }
 `;
