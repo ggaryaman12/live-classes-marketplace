@@ -195,7 +195,7 @@ export default function HippoChatLauncher() {
 
   return (
     <>
-      <button type="button" className="hcl" onClick={open} disabled={opening} aria-label="Chat with support">
+      <button type="button" className="hcl" onClick={open} disabled={opening} data-open={chatOpen ? 'true' : 'false'} aria-label="Chat with support">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
         </svg>
@@ -235,8 +235,36 @@ const css = `
 html body iframe#iframe_fuguWidget.collapsed,
 html body iframe#iframe_fuguWidgetContent.collapsed{ display:none !important; pointer-events:none !important; }
 .hcl:hover{ filter:brightness(1.06); transform:translateY(-1px); }
+
+/* Arrival: rises and fades in once the page has settled (ease-out, no pop).
+   fill-mode "backwards" so the normal hover transform takes over afterwards. */
+.hcl{ animation:hcl-in 520ms cubic-bezier(.16,1,.3,1) 900ms backwards; }
+@keyframes hcl-in{
+  from{ opacity:0; transform:translateY(14px) scale(.94); }
+  to{ opacity:1; transform:none; }
+}
+/* A soft ring ripples out from the button three times to say "we're here",
+   then stops for good — attention without nagging. Transform/opacity only. */
+.hcl::after{
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  border:2px solid var(--brand-accent); opacity:0;
+  animation:hcl-ring 2.6s cubic-bezier(.16,1,.3,1) 2.4s 3;
+}
+@keyframes hcl-ring{
+  0%{ opacity:.55; transform:scale(1); }
+  70%,100%{ opacity:0; transform:scale(1.28, 1.7); }
+}
+.hcl[data-open="true"]::after, .hcl:disabled::after{ animation:none; }
+/* The bubble icon gives a small friendly tilt when you reach for the button. */
+.hcl svg{ transition:transform 220ms cubic-bezier(.16,1,.3,1); }
+.hcl:hover svg, .hcl:focus-visible svg{ transform:rotate(-10deg) scale(1.12); }
 .hcl:disabled{ opacity:.7; cursor:default; transform:none; }
 .hcl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
 @media (max-width:560px){ .hcl{ bottom:calc(14px + var(--float-lift, 0px)); right:14px; padding:10px 14px; font-size:.8rem; } }
-@media (prefers-reduced-motion:reduce){ .hcl:hover{ transform:none; } }
+@media (prefers-reduced-motion:reduce){
+  .hcl{ animation:none; }
+  .hcl::after{ animation:none; display:none; }
+  .hcl:hover{ transform:none; }
+  .hcl svg, .hcl:hover svg, .hcl:focus-visible svg{ transition:none; transform:none; }
+}
 `;
