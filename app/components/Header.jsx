@@ -15,10 +15,12 @@ export default function Header() {
   const [authOpen, setAuthOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   // Nav shows the link to wherever you are NOT: home → Classes only,
-  // Classes page → Home only, every other page → both.
+  // Classes page → Home only, My courses page → no My courses link, every
+  // other page → all of them.
   const path = usePathname() || '/';
   const onHome = path === '/';
   const onClasses = path === '/stores' || path.startsWith('/stores/');
+  const onMyCourses = path === '/p/my-subscriptions' || path.startsWith('/p/my-subscriptions/');
 
   useEffect(() => {
     const sync = () => setSess(getSession());
@@ -41,13 +43,8 @@ export default function Header() {
         <nav className="hd-nav">
           {!onHome && <Link href="/">Home</Link>}
           {!onClasses && <Link href="/stores">Explore Courses</Link>}
-          {session?.vendorId && (
-            <Link href="/p/my-subscriptions" className="hd-mine" aria-label="My courses">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" />
-              </svg>
-              <span>My courses</span>
-            </Link>
+          {session?.vendorId && !onMyCourses && (
+            <Link href="/p/my-subscriptions">My courses</Link>
           )}
           {session ? (
             // Per instruction: no "Sign out" here — signing out now lives on
@@ -78,15 +75,15 @@ export default function Header() {
            anchor styling nobody asked for. */
         .hd .hd-hi{text-decoration:none;color:inherit}
         .hd .hd-hi:hover{color:var(--brand);text-decoration:underline}
-        /* "My courses" lives in the header now (it used to float bottom-right
-           and collide with "Chat with us"). Plain nav link + small calendar
-           icon; on phones it collapses to the icon alone so the bar still fits. */
-        .hd .hd-mine{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:inherit;min-height:44px}
-        .hd .hd-mine:hover{color:var(--brand)}
+        /* "My courses" is a plain nav link, styled by the shared nav-link rule
+           exactly like Home / Explore Courses. Keep the row on one line, and
+           tighten it a little on phones so it still fits. */
+        /* Per instruction: hide the platform's "Can't reach the store data right
+           now" notice (the shared layout's .bn banner, outside this workspace,
+           shown only while the marketplace server is unreachable). */
+        .bn[role="status"]{display:none !important}
         .hd .hd-nav > *{white-space:nowrap}
         @media (max-width:640px){
-          .hd .hd-mine span{display:none}
-          .hd .hd-mine{justify-content:center;min-width:32px}
           .hd .hd-nav{gap:10px;font-size:.85rem}
         }
       `}</style>
