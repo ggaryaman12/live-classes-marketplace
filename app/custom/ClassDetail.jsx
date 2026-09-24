@@ -244,6 +244,37 @@ function ClassDetailInner({
     };
   }, [id]);
 
+  // The fixed Enroll bar owns the bottom edge below 900px. The site's floating
+  // "My courses" / "Chat with us" buttons read --float-lift, so measure the
+  // bar's REAL height (it varies with safe-area insets, font scaling, wrap)
+  // and lift them clear of it. Removed again on leave / at desktop width.
+  const clsReady = !!cls;
+  useEffect(() => {
+    if (!clsReady) return;
+    const root = document.documentElement;
+    const bar = document.querySelector(".cd-mobilebar");
+    if (!bar) return;
+    const apply = () => {
+      const h = bar.offsetHeight;
+      if (h > 0 && getComputedStyle(bar).display !== "none") {
+        root.style.setProperty("--float-lift", `${h + 12}px`);
+      } else {
+        root.style.removeProperty("--float-lift");
+      }
+    };
+    apply();
+    window.addEventListener("resize", apply);
+    window.addEventListener("orientationchange", apply);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(apply) : null;
+    ro?.observe(bar);
+    return () => {
+      window.removeEventListener("resize", apply);
+      window.removeEventListener("orientationchange", apply);
+      ro?.disconnect();
+      root.style.removeProperty("--float-lift");
+    };
+  }, [clsReady]);
+
   const meetingsBySession = useMemo(() => {
     const map = {};
     for (const s of SESSIONS) map[s.id] = generateMeetings(s);
@@ -747,10 +778,6 @@ const css = `
   font-family:var(--brand-font-display); font-weight:600; text-decoration:none; font-size:.9rem;
 }
 @media (max-width:899px){ .bell-cd{ padding-bottom:96px; } }
-/* The fixed Enroll bar owns the bottom edge on phones/tablets — lift the
-   floating "My courses" / "Chat with us" buttons above it so they never
-   cover the Enroll button (they read --float-lift; 0 everywhere else). */
-@media (max-width:899px){ body:has(.cd-mobilebar){ --float-lift:calc(74px + env(safe-area-inset-bottom)); } }
 
 .bell-cd :is(a,button):focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
 `;
