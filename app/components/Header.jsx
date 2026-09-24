@@ -33,7 +33,7 @@ export default function Header() {
           />
         </Link>
         <nav className="hd-nav">
-          <Link href="/">Browse</Link>
+          <Link href="/stores">Classes</Link>
           <a href="#">Help</a>
           {session ? (
             // Per instruction: no "Sign out" here — signing out now lives on
