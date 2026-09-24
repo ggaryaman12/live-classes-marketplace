@@ -61,6 +61,7 @@ const css = `
   box-shadow:0 6px 18px color-mix(in srgb, var(--brand-ink) 22%, transparent);
   transition:transform var(--motion) var(--motion-ease), filter var(--motion) var(--motion-ease);
 }
+.mcl{ min-height:44px; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
 .mcl:hover{ filter:brightness(1.06); transform:translateY(-1px); }
 .mcl:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:3px; }
 @media (max-width:560px){ .mcl{ bottom:calc(64px + var(--float-lift, 0px)); right:14px; padding:9px 12px; font-size:.76rem; } }
