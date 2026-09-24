@@ -22,8 +22,8 @@
       "type": "Custom",
       "props": {
         "component": "BellHero",
-        "eyebrow": "Live online classes for curious kids",
-        "searchPlaceholder": "Try “chess”, “creative writing”, “fractions”…",
+        "eyebrow": "Live online classes · real teachers",
+        "searchPlaceholder": "I want to learn… chess, drawing, coding",
         "browseHref": "/stores"
       }
     },
