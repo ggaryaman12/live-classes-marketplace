@@ -185,6 +185,14 @@ function ClassDetailInner({
   const [tz, setTz] = useState("your local time");
   const [cls, setCls] = useState(id ? null : SAMPLE_CLASS);
   const [cartBlockedMsg, setCartBlockedMsg] = useState("");
+  // Instant tap feedback: opening checkout can take a moment on a phone/tablet
+  // (first visit to a route), and a button that shows nothing reads as broken.
+  const [enrolling, setEnrolling] = useState(false);
+  useEffect(() => {
+    if (!enrolling) return;
+    const t = setTimeout(() => setEnrolling(false), 8000);
+    return () => clearTimeout(t);
+  }, [enrolling]);
 
   // A one-class-per-order block is a transient thing that just happened, not
   // a persistent page state — a toast reads as "here's what just happened"
@@ -307,6 +315,7 @@ function ClassDetailInner({
   // forces it: repeat clicks must never silently stack quantity nobody
   // chose.
   function enrollNow(target) {
+    if (enrolling) return;
     if (!cls.productId) {
       if (target) router.push(target);
       return;
@@ -325,6 +334,7 @@ function ClassDetailInner({
       { id: cls.productId, name: cls.title, price: cls.price, image: cls.img }
     );
     setQty(cls.productId, 1);
+    setEnrolling(true);
     router.push(target || `/checkout?product=${cls.productId}`);
   }
 
@@ -547,8 +557,8 @@ function ClassDetailInner({
                 <p className="cd-side-total">Taught by {cls.teacher}</p>
               )}
               {cls.productId ? (
-                <button type="button" className="cd-side-primary" onClick={() => enrollNow()}>
-                  Enroll now
+                <button type="button" className="cd-side-primary" onClick={() => enrollNow()} disabled={enrolling}>
+                  {enrolling ? "Opening checkout…" : "Enroll now"}
                 </button>
               ) : (
                 <button
@@ -572,7 +582,9 @@ function ClassDetailInner({
           <b>₹{cls.price.toLocaleString()}</b> <span>/ session</span>
         </div>
         {cls.productId ? (
-          <button type="button" onClick={() => enrollNow()}>Enroll now</button>
+          <button type="button" onClick={() => enrollNow()} disabled={enrolling}>
+            {enrolling ? "Opening…" : "Enroll now"}
+          </button>
         ) : (
           <button
             type="button"
@@ -764,7 +776,7 @@ const css = `
 
 .cd-mobilebar{
   display:flex; align-items:center; justify-content:space-between; gap:16px;
-  position:fixed; left:0; right:0; bottom:0; z-index:20;
+  position:fixed; left:0; right:0; bottom:0; z-index:40;
   padding:12px 16px calc(12px + env(safe-area-inset-bottom));
   background:var(--brand-surface); border-top:1px solid var(--brand-line);
   box-shadow:0 -12px 30px -20px color-mix(in srgb, var(--brand-ink) 45%, transparent);
@@ -773,10 +785,12 @@ const css = `
 .cd-mobilebar b{ font-family:var(--brand-font-display); font-size:1.1rem; }
 .cd-mobilebar span{ color:var(--brand-ink-soft); font-size:.8rem; }
 .cd-mobilebar a, .cd-mobilebar button{
+  min-height:44px; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
   padding:11px 20px; border-radius:var(--radius); border:0; cursor:pointer;
   background:var(--brand-accent); color:var(--brand-accent-ink);
   font-family:var(--brand-font-display); font-weight:600; text-decoration:none; font-size:.9rem;
 }
+.cd-mobilebar button:disabled, .cd-side-primary:disabled{ opacity:.7; cursor:default; }
 @media (max-width:899px){ .bell-cd{ padding-bottom:96px; } }
 
 .bell-cd :is(a,button):focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; }
