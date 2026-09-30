@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 4400",
     "build": "next build",
-    "start": "next start -p 4400"
+    "start": "next start -p 4400",
+    "build-and-start-prod": "next build && next start -p ${PORT:-4400}"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
