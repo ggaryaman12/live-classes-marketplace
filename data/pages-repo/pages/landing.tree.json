@@ -1,0 +1,84 @@
+{
+  "schema": "yelo.tree/1",
+  "page": "landing",
+  "root": "page",
+  "nodes": {
+    "page": {
+      "id": "page",
+      "type": "Page",
+      "props": {},
+      "children": [
+        "hero",
+        "subjects",
+        "how",
+        "teachersLede",
+        "grid",
+        "trust",
+        "chat"
+      ]
+    },
+    "hero": {
+      "id": "hero",
+      "type": "Custom",
+      "props": {
+        "component": "BellHero",
+        "eyebrow": "Live online classes · real teachers",
+        "searchPlaceholder": "I want to learn… chess, drawing, coding",
+        "browseHref": "/stores"
+      }
+    },
+    "subjects": {
+      "id": "subjects",
+      "type": "Custom",
+      "props": {
+        "component": "SubjectTiles",
+        "heading": "Browse by category",
+        "subhead": "What this teacher network actually offers right now, pulled live from the marketplace.",
+        "browseHref": "/stores"
+      }
+    },
+    "how": {
+      "id": "how",
+      "type": "Custom",
+      "props": {
+        "component": "HowLiveWorks",
+        "heading": "How a live class works IN LIVE"
+      }
+    },
+    "teachersLede": {
+      "id": "teachersLede",
+      "type": "Custom",
+      "props": {
+        "component": "TeacherEditorial",
+        "eyebrow": "Who's teaching",
+        "statement": "The people your kid will actually meet — not a logo, not a bot. Real teachers, running small rooms they've built themselves."
+      }
+    },
+    "grid": {
+      "id": "grid",
+      "type": "Custom",
+      "props": {
+        "component": "TeacherDirectory",
+        "heading": "Teachers with classes open now",
+        "columns": 3
+      }
+    },
+    "trust": {
+      "id": "trust",
+      "type": "Custom",
+      "props": {
+        "component": "TrustStrip",
+        "heading": "Enough to feel good about handing over the tablet",
+        "browseHref": "/stores",
+        "classHref": "/p/class"
+      }
+    },
+    "chat": {
+      "id": "chat",
+      "type": "Custom",
+      "props": {
+        "component": "HippoChatLauncher"
+      }
+    }
+  }
+}

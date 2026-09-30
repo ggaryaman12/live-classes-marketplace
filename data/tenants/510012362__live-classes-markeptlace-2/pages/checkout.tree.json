@@ -1,0 +1,57 @@
+{
+  "schema": "yelo.tree/1",
+  "page": "checkout",
+  "root": "p1",
+  "nodes": {
+    "p1": {
+      "id": "p1",
+      "type": "Page",
+      "props": {},
+      "children": [
+        "enroll",
+        "schedule",
+        "recurringSummary",
+        "checkout1"
+      ]
+    },
+    "enroll": {
+      "id": "enroll",
+      "type": "Custom",
+      "props": {
+        "component": "EnrollHeader",
+        "eyebrow": "Confirm your subscription"
+      }
+    },
+    "schedule": {
+      "id": "schedule",
+      "type": "Custom",
+      "props": {
+        "component": "SubscribeScheduler"
+      }
+    },
+    "recurringSummary": {
+      "id": "recurringSummary",
+      "type": "Custom",
+      "props": {
+        "component": "RecurringSummary",
+        "heading": "Your schedule"
+      }
+    },
+    "checkout1": {
+      "id": "checkout1",
+      "type": "Custom",
+      "props": {
+        "component": "ClassCheckout",
+        "title": "Confirm & pay",
+        "paymentLabel": "How you’ll pay",
+        "summaryLabel": "Your enrollment",
+        "ctaLabel": "Confirm & enroll",
+        "allowCash": false,
+        "allowWallet": false
+      },
+      "bind": {
+        "source": "get_bill_breakdown"
+      }
+    }
+  }
+}

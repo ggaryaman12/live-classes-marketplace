@@ -1,0 +1,511 @@
+/* ============================================================
+   Market — design system
+   Direction: "market hall" — crisp paper ground, near-black ink,
+   confident forest-green primary, amber for price/urgency.
+   Hairline borders over soft shadows. Tight radii. Dense, professional.
+   Mobile-first, responsive throughout.
+   ============================================================ */
+/* SITE CHROME IS DERIVED, NOT HARDCODED.
+   Every value below that the theme contract owns is now `var(--brand-*, <the old
+   literal>)`. The header, nav, cart, sheets and checkout therefore repaint with
+   the workspace's tokens.css — which is what "global theme" was supposed to mean
+   and never did, because nothing loaded that file. The literals remain as
+   fallbacks, so a workspace with no tokens renders exactly as it always has.
+   The contract is defined in app/custom/tokens.css; see app/lib/customSync.js. */
+:root{
+  --paper:var(--brand-paper,#FCFCFA); --card:var(--brand-surface,#FFFFFF);
+  --ink:var(--brand-ink,#101413); --ink-2:var(--brand-ink-soft,#3A4441);
+  --muted:#6A736F; --faint:#98A09C;
+  --line:var(--brand-line,#E6E8E4); --line-2:#D3D7D1;
+  --brand:var(--brand-accent,#14532D); --brand-2:#1C6B3C;
+  --brand-wash:var(--brand-accent-soft,#EEF5F0);
+  --on-brand:var(--brand-accent-ink,#fff);
+  /* Renamed from --brand-ink, which the contract now owns with a different
+     meaning (body ink, not a dark shade of the brand). Two use sites. */
+  --brand-deep:#0C3D20;
+  --amber:#B45309; --amber-wash:#FEF6E7;
+  --ok:#14532D; --ok-wash:#EEF5F0; --danger:#9B2C1F; --danger-wash:#FDEEEB;
+  --veg:#15803D; --nonveg:#B4231C;
+  --sans:var(--brand-font-body,"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif);
+  --display:var(--brand-font-display,var(--sans));
+  --r:var(--radius,10px); --r-lg:var(--radius-lg,14px);
+  /* --t is the site's transition shorthand. A direction that sets --motion:0s
+     turns movement off everywhere at once; the reduced-motion rule below still
+     overrides regardless, because that is the user's call and not the theme's. */
+  --t:var(--motion,140ms) var(--motion-ease,cubic-bezier(0.4,0,0.2,1));
+  --sh:0 1px 2px rgba(16,20,19,.04);
+  --sh-md:0 4px 16px -6px rgba(16,20,19,.14);
+}
+
+/* ============================================================
+   A DARK SET THAT ALWAYS EXISTS.
+   
+   The theme switch stamps data-theme on <html> and every value above already
+   derives from the contract, so the whole storefront was supposed to repaint
+   from one attribute. It did not: nothing ever DEFINED the dark values. A site
+   whose tokens.css has only a light block — every site built before that rule,
+   and any build where the model skipped it — had a Dark button that visibly
+   selected and changed nothing on the page.
+   
+   Same shape as every other serious bug here: an instruction with no mechanism.
+   The constitution required light AND dark; the platform shipped no floor.
+   
+   So this is the floor. It is loaded BEFORE app/custom/tokens.css, so a
+   workspace that defines its own dark set still wins — this only fills the gap.
+   ============================================================ */
+:root[data-theme="dark"]{
+  --brand-ink:#F2EFEA;
+  --brand-ink-soft:#A9A29A;
+  --brand-paper:#12100E;
+  --brand-surface:#1B1815;
+  --brand-line:#2E2A26;
+  --brand-accent:#E08A5F;
+  --brand-accent-soft:#2A211C;
+  --brand-accent-ink:#12100E;
+}
+/* SYSTEM IS THE DEFAULT: a visitor whose device is dark gets the dark set with
+   no choice made. An explicit choice stamps data-theme and wins over the device,
+   which is why this is scoped away from an explicit light. */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+  --brand-ink:#F2EFEA;
+  --brand-ink-soft:#A9A29A;
+  --brand-paper:#12100E;
+  --brand-surface:#1B1815;
+  --brand-line:#2E2A26;
+  --brand-accent:#E08A5F;
+  --brand-accent-soft:#2A211C;
+  --brand-accent-ink:#12100E;
+  }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer}
+img{max-width:100%;display:block}
+::selection{background:rgba(20,83,45,.14)}
+.app-main{min-height:calc(100vh - 60px)}
+
+/* ---------------- header ---------------- */
+.hd{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;
+  height:60px;padding:0 clamp(14px,3.5vw,44px);background:rgba(252,252,250,.92);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line)}
+.hd-logo{font-weight:750;font-size:19px;letter-spacing:-.03em}
+.hd-logo span{color:var(--brand)}
+.hd-nav{display:flex;align-items:center;gap:clamp(12px,2vw,24px)}
+.hd-nav>a{font-size:14px;font-weight:500;color:var(--ink-2)}
+.hd-nav>a:hover{color:var(--brand)}
+@media(max-width:560px){.hd-nav>a{display:none}}
+.hd-signin{background:none;border:none;font-weight:650;font-size:14px;color:var(--brand)}
+.hd-account{display:inline-flex;align-items:center;gap:10px}
+.hd-hi{font-size:14px;font-weight:600}
+@media(max-width:480px){.hd-hi{display:none}}
+.hd-link{background:none;border:none;color:var(--muted);font-weight:600;font-size:13px}
+.hd-cart{position:relative;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;
+  border-radius:var(--r);border:1px solid var(--line-2);background:var(--card);color:var(--ink);transition:border-color var(--t),background var(--t)}
+.hd-cart:hover{border-color:var(--brand);background:var(--brand-wash)}
+.hd-badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;padding:0 5px;border-radius:99px;
+  background:var(--brand);color:var(--on-brand);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+/* ---------------- hero ---------------- */
+.hero2{border-bottom:1px solid var(--line);background:var(--card)}
+.hero2-inner{max-width:1180px;margin:0 auto;padding:clamp(30px,5vw,60px) clamp(14px,3.5vw,44px)}
+.hero2-eyebrow{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--brand);background:var(--brand-wash);padding:5px 11px;border-radius:6px;margin-bottom:16px}
+.hero2-title{font-size:clamp(28px,4.6vw,50px);line-height:1.05;letter-spacing:-.035em;font-weight:750;margin:0;max-width:16ch}
+.hero2-sub{margin:14px 0 22px;font-size:clamp(14.5px,1.4vw,17px);color:var(--muted);max-width:52ch}
+.hero2-search{display:flex;align-items:center;gap:10px;max-width:480px;background:var(--paper);
+  border:1px solid var(--line-2);border-radius:var(--r);padding:0 14px;color:var(--faint);transition:border-color var(--t)}
+.hero2-search:focus-within{border-color:var(--brand)}
+.hero2-search input{flex:1;border:none;outline:none;background:none;padding:13px 0;font-size:15px;color:var(--ink)}
+.hero2-glow{display:none}
+
+/* ---------------- store grid ---------------- */
+.stores2{max-width:1180px;margin:0 auto;padding:clamp(22px,3.5vw,38px) clamp(14px,3.5vw,44px) 72px}
+.stores2-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:18px}
+.stores2-head h2{font-size:clamp(19px,2.4vw,25px);letter-spacing:-.025em;margin:0;font-weight:700}
+.stores2-count{font-size:12.5px;font-weight:600;color:var(--muted);white-space:nowrap}
+.stores2-empty{color:var(--muted)}
+.stores2-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px}
+@media(max-width:560px){.stores2-grid{grid-template-columns:1fr;gap:14px}}
+.sc{display:block;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;
+  transition:border-color var(--t),transform var(--t)}
+.sc:hover{border-color:var(--line-2);transform:translateY(-2px)}
+.sc-media{position:relative;aspect-ratio:16/9;background:var(--brand-wash);overflow:hidden}
+.sc-media img{width:100%;height:100%;object-fit:cover}
+.sc-media-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:750;color:var(--brand)}
+.sc-eta{position:absolute;bottom:9px;left:9px;background:var(--card);color:var(--ink);font-size:11.5px;font-weight:650;
+  padding:4px 9px;border-radius:6px;border:1px solid var(--line)}
+.sc-body{padding:13px 14px 15px}
+.sc-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sc-name{font-weight:650;font-size:15.5px;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc-rating{flex:none;font-size:12px;font-weight:700;color:var(--ok);background:var(--ok-wash);padding:2px 7px;border-radius:5px}
+.sc-addr{margin-top:4px;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------------- store detail ---------------- */
+.store{max-width:1060px;margin:0 auto;padding:clamp(16px,2.5vw,28px) clamp(14px,3.5vw,36px) 96px}
+.store-hero{display:flex;align-items:center;gap:18px;position:relative;background:var(--card);
+  border:1px solid var(--line);border-radius:var(--r-lg);padding:18px}
+@media(max-width:600px){.store-hero{flex-direction:column;align-items:flex-start;gap:12px;padding:16px}}
+.store-hero-logo{width:64px;height:64px;flex:none;border-radius:var(--r);overflow:hidden;display:flex;align-items:center;
+  justify-content:center;font-size:26px;font-weight:750;color:var(--brand);background:var(--brand-wash)}
+.store-hero-body h1{margin:0 0 7px;font-size:clamp(20px,2.6vw,27px);letter-spacing:-.025em;font-weight:700}
+.store-hero-meta{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--muted)}
+.shm-rating{color:var(--ok)}
+.store-hero-addr{margin-top:7px;font-size:13px;color:var(--faint)}
+.store-back{position:absolute;top:16px;right:18px;font-size:12.5px;font-weight:650;color:var(--brand)}
+@media(max-width:600px){.store-back{position:static;margin-top:4px}}
+.store-demo-note{margin:14px 0 0;background:var(--amber-wash);border:1px solid #F0D9A8;color:var(--amber);
+  font-size:12.5px;padding:10px 14px;border-radius:var(--r)}
+.store-missing{max-width:600px;margin:70px auto;text-align:center;color:var(--muted)}
+.store-missing a{color:var(--brand);font-weight:650}
+
+/* ---------------- catalogue ---------------- */
+.cat{display:grid;grid-template-columns:200px 1fr;gap:26px;margin-top:22px;align-items:start}
+@media(max-width:820px){.cat{grid-template-columns:1fr;gap:0}.cat-nav:not(.is-center){display:none}}
+.cat-nav{position:sticky;top:74px;display:flex;flex-direction:column;gap:1px}
+.cat-nav-i{display:flex;align-items:center;justify-content:space-between;gap:8px;background:none;border:none;text-align:left;
+  padding:9px 11px;border-radius:7px;font-size:13.5px;font-weight:550;color:var(--ink-2);border-left:2px solid transparent}
+.cat-nav-i span{font-size:11px;color:var(--faint);font-weight:600}
+.cat-nav-i:hover{background:var(--card);color:var(--ink)}
+.cat-nav-i.on{background:var(--brand-wash);color:var(--brand-deep);border-left-color:var(--brand);font-weight:700}
+.cat-sec{scroll-margin-top:76px;margin-bottom:30px}
+.cat-sec-h{font-size:17.5px;letter-spacing:-.02em;margin:0 0 12px;font-weight:700}
+.cat-products{display:flex;flex-direction:column;gap:0}
+.pc{display:flex;gap:16px;justify-content:space-between;padding:16px 0;border-bottom:1px solid var(--line)}
+.pc:last-child{border-bottom:none}
+.pc-body{min-width:0;flex:1}
+.pc-top{display:flex;align-items:center;gap:8px}
+.pc-veg{width:14px;height:14px;flex:none;border-radius:3px;border:1.5px solid;display:inline-block;position:relative}
+.pc-veg.v{border-color:var(--veg)}.pc-veg.n{border-color:var(--nonveg)}
+.pc-veg::after{content:"";position:absolute;inset:2.5px;border-radius:50%}
+.pc-veg.v::after{background:var(--veg)}.pc-veg.n::after{background:var(--nonveg)}
+.pc-name{font-weight:650;font-size:15.5px;letter-spacing:-.01em}
+.pc-price{margin-top:5px;font-weight:700;font-size:14.5px;color:var(--ink)}
+.pc-desc{margin:7px 0 0;font-size:13px;color:var(--muted);line-height:1.5;max-width:46ch}
+.pc-media{position:relative;flex:none;width:108px}
+@media(max-width:520px){.pc-media{width:88px}}
+.pc-media img,.pc-media-ph{width:100%;height:86px;border-radius:var(--r);object-fit:cover;display:flex;
+  align-items:center;justify-content:center;font-size:26px;font-weight:750;color:var(--brand);background:var(--brand-wash)}
+@media(max-width:520px){.pc-media img,.pc-media-ph{height:74px}}
+.pc-add,.pc-step{position:absolute;bottom:-11px;left:50%;transform:translateX(-50%);height:32px;border-radius:8px;font-weight:700;font-size:12.5px}
+.pc-add{width:84px;background:var(--card);color:var(--brand);border:1px solid var(--brand);letter-spacing:.05em;box-shadow:var(--sh)}
+.pc-add:hover{background:var(--brand);color:var(--on-brand)}
+.pc-step{width:96px;display:flex;align-items:center;justify-content:space-between;background:var(--brand);color:var(--on-brand);border:none;padding:0 3px}
+.pc-step button{background:none;border:none;color:var(--on-brand);font-size:18px;font-weight:600;width:30px;height:100%}
+.pc-step span{font-size:13px;font-weight:700}
+
+/* restrictions */
+.cat-closed,.cat-preorder{margin:14px 0 0;font-size:13px;padding:11px 14px;border-radius:var(--r);line-height:1.5}
+.cat-closed{background:var(--danger-wash);border:1px solid #F0CDC6;color:var(--danger)}
+.cat-preorder{background:var(--amber-wash);border:1px solid #F0D9A8;color:var(--amber)}
+.cat-nav-i.d2{padding-left:22px;font-size:13px}
+.cat-nav-i.d3{padding-left:34px;font-size:12.5px;color:var(--faint)}
+.cat-sec.d2 .cat-sec-h{font-size:16px}
+.cat-sec.d3 .cat-sec-h{font-size:14.5px;color:var(--muted)}
+.cat.layout-center{grid-template-columns:1fr}
+.cat-nav.is-center{position:static;flex-direction:row;flex-wrap:wrap;gap:7px;justify-content:center;margin-bottom:22px;
+  padding-bottom:14px;border-bottom:1px solid var(--line)}
+.cat-nav.is-center .cat-nav-i{border-left:none;border:1px solid var(--line-2);border-radius:99px;padding:7px 14px}
+.cat-nav.is-center .cat-nav-i.on{background:var(--brand);color:var(--on-brand);border-color:var(--brand)}
+.cat-nav.is-center .cat-nav-i.d2,.cat-nav.is-center .cat-nav-i.d3{padding-left:14px}
+.pc.is-blocked{opacity:.55}
+.pc-unavail{display:inline-block;margin-top:7px;font-size:11px;font-weight:700;color:var(--danger);background:var(--danger-wash);padding:3px 8px;border-radius:5px}
+.pc-add.is-off{background:var(--paper);color:var(--faint);border-color:var(--line);cursor:not-allowed;box-shadow:none}
+.pc-add.is-off:hover{background:var(--paper);color:var(--faint)}
+.store-state{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:5px}
+.store-state.open{background:var(--ok-wash);color:var(--ok)}
+.store-state.closed{background:var(--danger-wash);color:var(--danger)}
+
+/* ---------------- cart sheet ---------------- */
+.sheet-scrim{position:fixed;inset:0;background:rgba(16,20,19,.38);opacity:0;pointer-events:none;transition:opacity .2s;z-index:60}
+.sheet-scrim.show{opacity:1;pointer-events:auto}
+.sheet{position:fixed;top:0;right:0;bottom:0;width:392px;max-width:94vw;background:var(--paper);z-index:61;
+  transform:translateX(100%);transition:transform .26s cubic-bezier(.3,.9,.3,1);display:flex;flex-direction:column;border-left:1px solid var(--line)}
+.sheet.open{transform:none}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;padding:18px;border-bottom:1px solid var(--line)}
+.sheet-title{font-size:17px;font-weight:700;letter-spacing:-.02em}
+.sheet-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+.sheet-x{background:none;border:none;font-size:24px;line-height:1;color:var(--muted)}
+.sheet-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);text-align:center;padding:28px;font-size:14px}
+.sheet-empty-emoji{font-size:34px;opacity:.5}
+.sheet-items{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:12px}
+.ci{display:flex;align-items:center;gap:11px}
+.ci-logo{width:42px;height:42px;flex:none;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;
+  font-weight:750;color:var(--brand);background:var(--brand-wash);font-size:15px}
+.ci-body{flex:1;min-width:0}
+.ci-name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci-price{font-size:12.5px;color:var(--muted);margin-top:2px}
+.ci-qty{display:flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--line-2);border-radius:7px;padding:2px}
+.ci-qty button{width:24px;height:24px;border:none;background:none;font-size:15px;font-weight:600;color:var(--brand)}
+.ci-qty span{font-size:12.5px;font-weight:700;min-width:15px;text-align:center}
+.sheet-foot{border-top:1px solid var(--line);padding:14px 16px;background:var(--card)}
+.sheet-row{display:flex;justify-content:space-between;font-size:14px;font-weight:700;margin-bottom:11px}
+.sheet-checkout{width:100%;background:var(--brand);color:var(--on-brand);border:none;border-radius:var(--r);padding:14px;font-weight:700;font-size:14.5px;transition:background var(--t)}
+.sheet-checkout:hover{background:var(--brand-2)}
+.sheet-clear{width:100%;background:none;border:none;color:var(--muted);font-weight:600;font-size:12.5px;margin-top:9px}
+
+.modal-scrim2{position:fixed;inset:0;background:rgba(16,20,19,.45);z-index:70;display:flex;align-items:center;justify-content:center;padding:18px}
+.modal2{width:100%;max-width:376px;background:var(--card);border-radius:var(--r-lg);padding:22px;border:1px solid var(--line)}
+.modal2-t{font-size:17px;font-weight:700;margin-bottom:8px;letter-spacing:-.02em}
+.modal2 p{margin:0 0 16px;color:var(--muted);font-size:13.5px;line-height:1.55}
+.modal2-a{display:flex;gap:9px;justify-content:flex-end}
+.btn2-ghost{background:none;border:1px solid var(--line-2);border-radius:8px;padding:9px 15px;font-weight:650;font-size:13.5px}
+.btn2-primary{background:var(--brand);color:var(--on-brand);border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13.5px}
+
+/* ---------------- auth modal ---------------- */
+.auth-scrim{position:fixed;inset:0;background:rgba(16,20,19,.45);z-index:80;display:flex;align-items:center;justify-content:center;padding:18px}
+.auth-card{position:relative;width:100%;max-width:392px;background:var(--card);border-radius:var(--r-lg);padding:28px 26px;border:1px solid var(--line);box-shadow:var(--sh-md)}
+.auth-x{position:absolute;top:14px;right:16px;background:none;border:none;font-size:24px;color:var(--muted)}
+.auth-h{font-size:22px;font-weight:750;letter-spacing:-.03em}
+.auth-sub{color:var(--muted);font-size:13.5px;margin:5px 0 18px}
+.auth-switch{display:flex;gap:5px;background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:3px;margin-bottom:16px}
+.auth-switch button{flex:1;background:none;border:none;padding:8px;border-radius:7px;font-weight:650;font-size:13px;color:var(--muted)}
+.auth-switch button.on{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.auth-l{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 6px}
+.auth-in{width:100%;padding:12px 13px;margin-bottom:10px;border:1px solid var(--line-2);border-radius:9px;font-size:14.5px;background:var(--paper);outline:none;transition:border-color var(--t)}
+.auth-in:focus{border-color:var(--brand);background:var(--card)}
+.auth-in.otp{letter-spacing:.4em;text-align:center;font-size:19px;font-weight:700}
+.auth-phone{display:flex;align-items:stretch;gap:7px}
+.auth-cc{display:flex;align-items:center;padding:0 13px;margin-bottom:10px;background:var(--paper);border:1px solid var(--line-2);border-radius:9px;font-weight:650;color:var(--muted);font-size:14px}
+.auth-phone .auth-in{flex:1}
+.auth-msg{font-size:12.5px;padding:9px 11px;border-radius:8px;margin-bottom:11px}
+.auth-msg.error{background:var(--danger-wash);color:var(--danger)}
+.auth-msg.ok{background:var(--ok-wash);color:var(--ok)}
+.auth-go{width:100%;background:var(--brand);color:var(--on-brand);border:none;border-radius:9px;padding:13px;font-weight:700;font-size:14.5px;transition:background var(--t)}
+.auth-go:hover{background:var(--brand-2)}
+.auth-go:disabled{opacity:.55}
+.auth-back{width:100%;background:none;border:none;color:var(--muted);font-weight:600;font-size:12.5px;margin-top:11px}
+
+/* ---------------- checkout ---------------- */
+.ck{max-width:1000px;margin:0 auto;padding:clamp(18px,2.5vw,30px) clamp(14px,3.5vw,36px) 96px}
+.ck-title{font-size:clamp(21px,2.8vw,30px);letter-spacing:-.03em;margin:0 0 20px;font-weight:750}
+.ck-grid{display:grid;grid-template-columns:1fr 366px;gap:20px;align-items:start}
+@media(max-width:880px){.ck-grid{grid-template-columns:1fr}}
+.ck-left{display:flex;flex-direction:column;gap:16px}
+.ck-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px}
+.ck-card-h{font-size:14.5px;font-weight:700;margin-bottom:13px;letter-spacing:-.01em}
+.ck-loc{display:inline-flex;align-items:center;gap:7px;background:var(--brand-wash);color:var(--brand-deep);
+  border:1px solid #CFE3D6;border-radius:8px;padding:9px 13px;font-weight:650;font-size:13px;margin-bottom:11px}
+.ck-in{width:100%;padding:12px 13px;border:1px solid var(--line-2);border-radius:9px;font-size:14.5px;font-family:inherit;background:var(--paper);outline:none;resize:none}
+.ck-in:focus{border-color:var(--brand);background:var(--card)}
+.ck-latlng{margin-top:9px;font-size:12px;color:var(--faint)}
+/* Delivery vs self-pickup. Two equal targets rather than a dropdown: this is a
+   binary choice that changes the price, so it should be visible, not hidden
+   behind a control you have to open. */
+.ck-modes{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.ck-mode{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 13px;
+  border:1px solid var(--line-2);border-radius:var(--r);background:var(--paper);cursor:pointer;
+  text-align:left;font-family:inherit;transition:border-color var(--t),background var(--t)}
+.ck-mode.on{border-color:var(--brand);background:var(--brand-wash)}
+.ck-mode b{font-size:14px;font-weight:650;color:var(--ink)}
+.ck-mode small{color:var(--muted);font-size:12px}
+/* Phone and email side by side; they stack under 560px with the grid below. */
+.ck-two{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px}
+.ck-in+.ck-in{margin-top:9px}
+.ck-two .ck-in+.ck-in{margin-top:0}
+/* The field the order was rejected for. Colour alone would fail contrast
+   checks and be invisible to anyone colour-blind, so the border thickens too. */
+.ck-bad{border-color:var(--bad,#c0392b);border-width:1.5px}
+.ck-retry{background:none;border:0;padding:0;font:inherit;color:var(--brand);
+  text-decoration:underline;cursor:pointer}
+/* A bill being refetched belongs to the PREVIOUS address. Dim it so the old
+   number does not read as the current one while the new one loads. */
+.bl-stale{opacity:.45;transition:opacity var(--t)}
+@media (max-width:560px){.ck-modes,.ck-two{grid-template-columns:1fr}
+  .ck-two .ck-in+.ck-in{margin-top:9px}}
+.ck-pay{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid var(--line-2);border-radius:var(--r);margin-bottom:9px;cursor:pointer;transition:border-color var(--t),background var(--t)}
+.ck-pay.on{border-color:var(--brand);background:var(--brand-wash)}
+.ck-pay.off{opacity:.5}
+.ck-pay input{accent-color:var(--brand);width:17px;height:17px}
+.ck-pay-i{font-size:20px}
+.ck-pay-b{display:flex;flex-direction:column}
+.ck-pay-b b{font-size:14px;font-weight:650}
+.ck-pay-b small{color:var(--muted);font-size:12px;margin-top:1px}
+.ck-summary{position:sticky;top:74px}
+.ck-items{display:flex;flex-direction:column;gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.ck-item{display:flex;gap:9px;font-size:13.5px}
+.ck-item-q{color:var(--brand);font-weight:700}
+.ck-item-n{flex:1}
+.ck-item-p{font-weight:650}
+.ck-bill{padding:12px 0}
+.ck-bill-r{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:7px}
+.ck-bill-total{display:flex;justify-content:space-between;font-size:15.5px;font-weight:750;padding-top:11px;border-top:1px solid var(--line);margin-top:3px}
+.ck-bill-est{font-size:11px;color:var(--faint);margin-top:7px}
+.ck-error{background:var(--danger-wash);color:var(--danger);font-size:12.5px;padding:9px 11px;border-radius:8px;margin-bottom:11px}
+.ck-place{width:100%;background:var(--brand);color:var(--on-brand);border:none;border-radius:var(--r);padding:15px;font-weight:700;font-size:15px;transition:background var(--t);margin-top:5px}
+.ck-place:hover{background:var(--brand-2)}
+.ck-place:disabled{opacity:.55}
+.ck-secure{text-align:center;font-size:11.5px;color:var(--faint);margin-top:11px}
+.ck-done,.ck-empty{max-width:500px;margin:64px auto;text-align:center;padding:18px}
+.ck-done-check{width:66px;height:66px;margin:0 auto 20px;border-radius:50%;background:var(--ok-wash);color:var(--ok);font-size:32px;font-weight:750;display:flex;align-items:center;justify-content:center}
+.ck-done h1,.ck-empty h1{font-size:25px;letter-spacing:-.03em;margin:0 0 9px;font-weight:750}
+.ck-done p{color:var(--muted);font-size:14.5px;margin:0 0 5px}
+.ck-done-sub{font-size:13px!important;color:var(--faint)!important}
+.ck-done-btn{margin-top:20px;background:var(--brand);color:var(--on-brand);border:none;border-radius:var(--r);padding:13px 24px;font-weight:700;font-size:14.5px}
+
+/* ---------------- backend-unreachable notice ----------------
+   Painted from the theme like everything else, so a tenant's outage banner
+   still looks like their site. Deliberately calm rather than alarming red:
+   nothing the owner did is broken, and nothing of theirs has been lost. */
+.bn{ max-width:1180px; margin:14px auto 0; padding:11px 14px;
+  display:flex; align-items:flex-start; gap:10px;
+  font-size:13.5px; line-height:1.5; color:var(--muted);
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r) }
+.bn strong{ color:var(--ink); font-weight:600 }
+.bn-dot{ flex:none; width:7px; height:7px; margin-top:6px; border-radius:50%;
+  background:var(--brand); animation:bn-pulse 1.8s ease-in-out infinite }
+@keyframes bn-pulse{ 0%,100%{opacity:.35} 50%{opacity:1} }
+@media (prefers-reduced-motion:reduce){ .bn-dot{ animation:none; opacity:.8 } }
+
+/* ---------------- skeletons ---------------- */
+@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+.skel-wrap{max-width:1180px;margin:0 auto;padding:28px clamp(14px,3.5vw,44px)}
+.skel-hero,.skel-storehero,.skel-card,.skel-row{background:linear-gradient(90deg,#F0F1EE 25%,#F7F8F5 50%,#F0F1EE 75%);
+  background-size:800px 100%;animation:shimmer 1.3s infinite linear;border-radius:var(--r-lg)}
+.skel-hero{height:160px;margin-bottom:26px}
+.skel-storehero{height:104px;margin-bottom:22px}
+.skel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px}
+.skel-card{height:210px}
+.skel-menu{display:flex;flex-direction:column;gap:12px}
+.skel-row{height:84px}
+@media(prefers-reduced-motion:reduce){.skel-hero,.skel-storehero,.skel-card,.skel-row{animation:none}}
+
+/* bridge badge */
+.tree-badge{position:fixed;bottom:12px;left:12px;z-index:30;font-size:10.5px;font-weight:650;color:var(--brand);
+  background:var(--brand-wash);border:1px solid #CFE3D6;padding:5px 10px;border-radius:6px;
+  font-family:ui-monospace,Menlo,monospace}
+
+/* ---- itemized bill (BillLines) — reused by checkout + standalone ------- */
+.bl{padding:14px 0 2px}
+.bl-row{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+  font-size:13px;color:var(--ink-2);margin-bottom:9px;line-height:1.4}
+.bl-row .bl-label{color:var(--muted)}
+.bl-row.discount .bl-val{color:var(--ok);font-variant-numeric:tabular-nums}
+.bl-row.charge .bl-val,.bl-row.subtotal .bl-val{font-variant-numeric:tabular-nums;color:var(--ink)}
+.bl-row.subtotal{font-weight:600}
+.bl-row.subtotal .bl-label{color:var(--ink)}
+.bl-muted{color:var(--faint)}
+/* more space above the total than below the last line — a real break, not a rule */
+.bl-total{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:16px;font-weight:750;letter-spacing:-.01em;color:var(--ink);
+  margin-top:6px;padding-top:13px;border-top:1px solid var(--line);
+  font-variant-numeric:tabular-nums}
+.bl-est{font-size:11px;color:var(--faint);margin:9px 0 0;line-height:1.5}
+
+/* ---- Hero3D — hero with a lazy 3D backdrop ---------------------------- */
+.hero3{position:relative;overflow:hidden;background:var(--paper);
+  border-bottom:1px solid var(--line);isolation:isolate}
+.hero3-scene{position:absolute;inset:0;z-index:0}
+.hero3-scene canvas{display:block;width:100%!important;height:100%!important}
+/* Keeps body text ≥4.5:1 over the scene: a soft paper wash from the text side,
+   fading out toward the art. A material, not decoration. */
+.hero3-veil{position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(105deg,
+    color-mix(in srgb,var(--paper) 94%,transparent) 0%,
+    color-mix(in srgb,var(--paper) 78%,transparent) 38%,
+    color-mix(in srgb,var(--paper) 20%,transparent) 72%,
+    transparent 100%)}
+.hero3-inner{position:relative;z-index:2;max-width:var(--wrap,1200px);margin:0 auto;
+  padding:74px 24px 62px;pointer-events:none}
+.hero3-inner>*{pointer-events:auto}
+.hero3-eyebrow{font-size:12px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--brand);margin-bottom:14px}
+.hero3-title{font-size:clamp(2.2rem,5vw,3.6rem);line-height:1.04;letter-spacing:-.035em;
+  font-weight:800;color:var(--ink);margin:0 0 16px;max-width:16ch;text-wrap:balance}
+.hero3-sub{font-size:clamp(15px,1.6vw,18px);line-height:1.5;color:var(--ink-2);
+  margin:0 0 26px;max-width:46ch}
+.hero3-search{display:flex;align-items:center;gap:10px;background:var(--card);
+  border:1px solid var(--line-2);border-radius:var(--r-lg);padding:13px 16px;max-width:440px;
+  color:var(--muted);box-shadow:0 6px 20px -12px rgba(12,61,32,.28);transition:border-color var(--t),box-shadow var(--t)}
+.hero3-search:focus-within{border-color:var(--brand);box-shadow:0 8px 26px -12px rgba(12,61,32,.4)}
+.hero3-search input{border:none;outline:none;background:none;font-size:15px;color:var(--ink);width:100%}
+.hero3-search input::placeholder{color:var(--muted)}
+@media(max-width:640px){
+  .hero3-inner{padding:52px 16px 44px}
+  .hero3-veil{background:linear-gradient(180deg,
+    color-mix(in srgb,var(--paper) 90%,transparent) 0%,
+    color-mix(in srgb,var(--paper) 55%,transparent) 60%,
+    color-mix(in srgb,var(--paper) 12%,transparent) 100%)}
+}
+@media(prefers-reduced-motion:reduce){.hero3-scene canvas{filter:saturate(.96)}}
+
+/* ---------------- themed cursor ----------------
+   The glyph is a decoration that follows the pointer; the REAL cursor is only
+   hidden while the replacement is on screen and away from a control, and the
+   class is removed on unmount, on blur, and when the pointer leaves the window.
+   A page with no visible pointer is broken, so every exit path restores it. */
+.has-themed-cursor, .has-themed-cursor body { cursor:none }
+.tc{ position:fixed; top:0; left:0; z-index:2147483000; pointer-events:none;
+  will-change:transform; transition:opacity var(--t); }
+.tc-glyph{ display:block; font-size:22px; line-height:1;
+  transform:translate(-50%,-50%) rotate(-8deg);
+  transition:transform var(--t), filter var(--t);
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,.28)); }
+/* Over a control the system cursor takes back over, so the glyph recedes
+   rather than competing with it. */
+.tc[data-control="yes"] .tc-glyph{ transform:translate(-50%,-50%) rotate(-8deg) scale(.6); opacity:.45 }
+.tc[data-down="yes"] .tc-glyph{ transform:translate(-50%,-50%) rotate(-8deg) scale(.82) }
+/* Belt and braces: if the media query changes under a rendered cursor, CSS
+   removes it even before the listener does. */
+@media (prefers-reduced-motion:reduce){ .tc{ display:none } .has-themed-cursor,.has-themed-cursor body{ cursor:auto } }
+@media (hover:none),(pointer:coarse){ .tc{ display:none } .has-themed-cursor,.has-themed-cursor body{ cursor:auto } }
+
+/* ---------------- entry sequence ----------------
+   A veil the page sits BEHIND — never a scroll lock. The document stays
+   scrollable the whole time, which is what keeps this a door rather than a trap.
+   Under prefers-reduced-motion the component does not render at all; these rules
+   are the second line of defence, not the first. */
+.es{ position:fixed; inset:0; z-index:2147482000; display:grid; place-items:center; }
+.es-veil{ position:absolute; inset:0; background:color-mix(in srgb, var(--paper) 72%, transparent);
+  backdrop-filter:blur(18px) saturate(115%); -webkit-backdrop-filter:blur(18px) saturate(115%);
+  animation:es-veil-in 620ms var(--motion-ease,cubic-bezier(.16,1,.3,1)) both; }
+/* Real text, turned in real space. Perspective on the stage, rotation on the
+   line — so the type has depth without leaving the DOM. */
+.es-stage{ position:relative; perspective:900px; padding:0 clamp(18px,6vw,64px); text-align:center; }
+.es-line{ margin:0 0 .18em; font-family:var(--display,var(--sans));
+  font-size:clamp(28px,6.2vw,74px); line-height:1.03; letter-spacing:-.035em; font-weight:750;
+  color:var(--ink); text-wrap:balance; transform-origin:50% 100%;
+  animation:es-line-in 900ms var(--motion-ease,cubic-bezier(.16,1,.3,1)) both;
+  animation-delay:calc(var(--i,0) * 140ms + 120ms); }
+.es-skip{ position:absolute; bottom:clamp(20px,5vh,44px); left:50%; transform:translateX(-50%);
+  padding:9px 18px; border-radius:999px; border:1px solid var(--line-2);
+  background:var(--card); color:var(--ink-2); font-size:13px; font-weight:600;
+  animation:es-veil-in 500ms 420ms both; }
+.es-skip:hover{ border-color:var(--brand); color:var(--brand) }
+.es-skip:focus-visible{ outline:2px solid var(--brand); outline-offset:3px }
+@keyframes es-veil-in{ from{ opacity:0 } to{ opacity:1 } }
+@keyframes es-line-in{
+  from{ opacity:0; transform:translateY(.35em) rotateX(52deg); filter:blur(6px) }
+  to{ opacity:1; transform:translateY(0) rotateX(0); filter:blur(0) }
+}
+/* Belt and braces. The component already refuses to render under reduced
+   motion; if it ever does, it must not move and must not stay. */
+@media (prefers-reduced-motion:reduce){
+  .es{ display:none }
+  .es-veil,.es-line,.es-skip{ animation:none }
+}
+
+/* ---------------- light / dark ----------------
+   The token contract carries two sets: light on :root, dark under
+   [data-theme="dark"]. Everything in this stylesheet already derives from those
+   names, so the entire storefront — chrome included — repaints from one
+   attribute on <html>. No component knows which mode it is in.
+
+   SYSTEM IS THE DEFAULT. With no data-theme set, a visitor whose device is dark
+   gets the dark set automatically. Choosing light or dark explicitly stamps the
+   attribute and wins over the device. */
+.ts{ display:inline-flex; align-items:center; gap:2px; padding:2px;
+  border:1px solid var(--line); border-radius:99px; background:var(--card) }
+.ts-b{ display:inline-flex; align-items:center; gap:5px; padding:5px 10px;
+  border:none; border-radius:99px; background:none; cursor:pointer;
+  font:inherit; font-size:12px; font-weight:600; color:var(--muted);
+  transition:background var(--t), color var(--t) }
+.ts-b:hover{ color:var(--ink) }
+.ts-b.on{ background:var(--brand-wash); color:var(--brand) }
+.ts-b:focus-visible{ outline:2px solid var(--brand); outline-offset:2px }
+/* The label is for a pointer; on a phone the glyph carries it, because three
+   labelled buttons in a 390px header is a header that wraps. */
+@media (max-width:640px){ .ts-l{ display:none } }
