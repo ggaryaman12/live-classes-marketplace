@@ -549,7 +549,8 @@ function ClassCheckoutInner({
   // a number nobody confirmed as final.
   const total = isSubscription && recurringBill ? recurringBill.total : (bill?.total ?? cart.subtotal);
   const walletShort = wallet.enabled && wallet.balance < total;
-  const currency = bill?.currency || '₹';
+  // Only a printable symbol — the backend's CURRENCY can arrive as `{}`.
+  const currency = typeof bill?.currency === 'string' && bill.currency ? bill.currency : '₹';
   // payment/getPaymentUrl's Joi schema requires vendor_id for a normal
   // (non subscription-plan) payment — there's no guest path for paying
   // online, unlike cash. Verified live: a call with no real session comes

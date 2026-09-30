@@ -11,7 +11,7 @@ export default function BillLines({
   // While a refetch is in flight the numbers on screen belong to the PREVIOUS
   // address or delivery mode. Dimming them says so; the checkout panel
   // separately refuses to place an order against a bill it is still replacing.
-  const cur = bill.currency || currency;
+  const cur = typeof bill.currency === 'string' && bill.currency ? bill.currency : currency;
   const money = (v) => `${v < 0 ? '−' : ''}${cur}${Math.abs(Math.round(v * 100) / 100)}`;
 
   return (

@@ -16,7 +16,13 @@ export const num = (obj, ...keys) => {
 // Raw bill response → ordered typed lines the UI renders.
 // kind: 'subtotal' | 'charge' (adds) | 'discount' (subtracts, shown negative).
 export function normalizeBill(d, items = [], deliveryType = 1) {
-  const currency = d.CURRENCY || d.currency_symbol || '₹';
+  // `CURRENCY` can come back as an object — `{}` when unconfigured, or
+  // `{ currency_id, symbol, … }` — never assume it's a printable string.
+  const c = d.CURRENCY;
+  const currency = (typeof c === 'string' && c)
+    || (c && typeof c === 'object' && typeof c.symbol === 'string' && c.symbol)
+    || (typeof d.currency_symbol === 'string' && d.currency_symbol)
+    || '₹';
   const total = num(d, 'NET_PAYABLE_AMOUNT', 'net_payable_amount', 'total_payable', 'grand_total', 'total');
 
   // Carried through separately from the display lines because create_task
