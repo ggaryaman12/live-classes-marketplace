@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { YELO_BASE, YELO_TENANT } from "../lib/yeloTenant";
 
 /**
  * WhatParentsSay — "What parents say" on a teacher's profile: parent name,
@@ -15,13 +16,6 @@ import { useEffect, useState } from "react";
  * import does not resolve.
  */
 
-const YELO_BASE = "https://test-api-3025.jungleworks.com";
-const YELO_TENANT = {
-  marketplace_user_id: 510009445,
-  marketplace_reference_id: "7a57517ff024ea5715497555a297e86c",
-  domain_name: "deliverecttest.devweb1.yelo.red",
-  dual_user_key: 0,
-};
 
 const SAMPLE_REVIEWS = [
   { customer_name: "Priya S.", rating: 5, review: "My daughter looks forward to this every week — she's actually disappointed when a session ends." },

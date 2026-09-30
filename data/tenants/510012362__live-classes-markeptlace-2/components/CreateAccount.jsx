@@ -34,15 +34,8 @@
 import { useState } from 'react';
 import { setSession } from '../lib/session';
 import { sessionFromLogin, phoneNo } from '../lib/auth';
+import { YELO_BASE, YELO_TENANT } from '../lib/yeloTenant';
 
-const YELO_BASE = 'https://test-api-3025.jungleworks.com';
-const YELO_TENANT = {
-  marketplace_user_id: 510009445,
-  marketplace_reference_id: '7a57517ff024ea5715497555a297e86c',
-  domain_name: 'deliverecttest.devweb1.yelo.red',
-  dual_user_key: 0,
-  language: 'en',
-};
 
 // A real, stable per-browser fingerprint from properties the browser already
 // exposes — not a random or fake value. djb2, a small well-known string hash,

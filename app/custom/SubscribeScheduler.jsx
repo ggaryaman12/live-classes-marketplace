@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCart } from "../lib/cart";
 import { getSession } from "../lib/session";
 import DatePicker from "./DatePicker";
+import { YELO_BASE, YELO_TENANT } from "../lib/yeloTenant";
 
 /**
  * SubscribeScheduler — "Set your preference" for a class whose real product
@@ -62,14 +63,6 @@ import DatePicker from "./DatePicker";
  * there. Recurring products still get the full picker below.
  */
 
-const YELO_BASE = "https://test-api-3025.jungleworks.com";
-const YELO_TENANT = {
-  marketplace_user_id: 510009445,
-  marketplace_reference_id: "7a57517ff024ea5715497555a297e86c",
-  domain_name: "deliverecttest.devweb1.yelo.red",
-  dual_user_key: 0,
-  language: "en",
-};
 const COORDS = { latitude: 28.61482, longitude: 77.219989 };
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

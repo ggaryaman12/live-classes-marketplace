@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { YELO_BASE, YELO_TENANT } from "../lib/yeloTenant";
 
 /**
  * LiveCatalogue — this teacher's real classes, fetched straight from the
@@ -44,14 +45,6 @@ import Link from "next/link";
  * cross-file imports beyond `react` and `next/*`.
  */
 
-const YELO_BASE = "https://test-api-3025.jungleworks.com";
-const YELO_TENANT = {
-  marketplace_user_id: 510009445,
-  marketplace_reference_id: "7a57517ff024ea5715497555a297e86c",
-  domain_name: "deliverecttest.devweb1.yelo.red",
-  dual_user_key: 0,
-  language: "en",
-};
 
 async function getProductsForCategory({ userId, parentCategoryId, page = 1, offset = 0, limit = 25 }) {
   try {

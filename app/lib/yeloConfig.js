@@ -2,8 +2,9 @@
 // These are public tenant identifiers (not secrets) — override via env in prod.
 // Every marketplace POST needs this envelope; we inject it server-side so the
 // browser never has to know it (and to dodge CORS).
-export const YELO_BASE =
-  process.env.YELO_BASE || 'https://test-api-3025.jungleworks.com';
+import { YELO_BASE as SHARED_BASE, YELO_TENANT } from './yeloTenant';
+
+export const YELO_BASE = process.env.YELO_BASE || SHARED_BASE;
 
 // Active tenant envelope. Defaults to the deliverect test tenant; per-tenant
 // values are injected via env (YELO_MKT / YELO_REF / YELO_DOMAIN) so the same
@@ -25,9 +26,9 @@ function activeTenant() {
 export const tenantEnvelope = () => {
   const a = activeTenant();
   return {
-    marketplace_user_id: Number(a?.marketplace_user_id || process.env.YELO_MKT || 510009445),
+    marketplace_user_id: Number(a?.marketplace_user_id || process.env.YELO_MKT || YELO_TENANT.marketplace_user_id),
     marketplace_reference_id:
-      a?.marketplace_reference_id || process.env.YELO_REF || '7a57517ff024ea5715497555a297e86c',
+      a?.marketplace_reference_id || process.env.YELO_REF || YELO_TENANT.marketplace_reference_id,
     domain_name:
       a?.domain_name || process.env.YELO_DOMAIN || 'deliverecttest.freelancer.jungleworks.me',
     dual_user_key: 0,

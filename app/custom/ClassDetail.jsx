@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCart } from "../lib/cart";
+import { YELO_BASE, YELO_TENANT } from "../lib/yeloTenant";
 
 /**
  * ClassDetail — the class page. Reads a real product id from the URL
@@ -25,13 +26,6 @@ import { useCart } from "../lib/cart";
 const FONT_LINK =
   "https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600&display=swap";
 
-const YELO_BASE = "https://test-api-3025.jungleworks.com";
-const YELO_TENANT = {
-  marketplace_user_id: 510009445,
-  marketplace_reference_id: "7a57517ff024ea5715497555a297e86c",
-  domain_name: "deliverecttest.devweb1.yelo.red",
-  dual_user_key: 0,
-};
 
 const SAMPLE_CLASS = {
   isSample: true,
