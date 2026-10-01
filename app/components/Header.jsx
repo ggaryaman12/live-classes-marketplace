@@ -8,6 +8,7 @@ import { useCart } from '../lib/cart';
 import { getSession } from '../lib/session';
 import AuthModal from './AuthModal';
 import CartSheet from './CartSheet';
+import HeaderProfileMenu from './HeaderProfileMenu';
 
 export default function Header() {
   const { count } = useCart();
@@ -47,9 +48,10 @@ export default function Header() {
             <Link href="/p/my-subscriptions">My courses</Link>
           )}
           {session ? (
-            // Per instruction: no "Sign out" here — signing out now lives on
-            // the profile page only, one click away via "Hi, {name}" below.
-            <Link href="/p/profile" className="hd-hi">Hi, {session.name?.split(' ')[0] || 'there'}</Link>
+            // "Hi, {name}" now opens a profile card right in the header —
+            // see HeaderProfileMenu.jsx — instead of only linking to the
+            // full profile page (still reachable from inside the card).
+            <HeaderProfileMenu session={session} />
           ) : (
             <button className="hd-signin" onClick={() => setAuthOpen(true)}>Sign in</button>
           )}
@@ -69,12 +71,6 @@ export default function Header() {
            correctly in the 60px header bar rather than sitting on its
            default inline baseline. */
         .hd .hd-logo{display:inline-flex;align-items:center}
-        /* .hd-hi (globals.css) only sets size/weight, written for a plain
-           span. Now that it's a real link to the profile page, it needs its
-           own no-underline + hover treatment so it doesn't pick up default
-           anchor styling nobody asked for. */
-        .hd .hd-hi{text-decoration:none;color:inherit}
-        .hd .hd-hi:hover{color:var(--brand);text-decoration:underline}
         /* "My courses" is a plain nav link, styled by the shared nav-link rule
            exactly like Home / Explore Courses. Keep the row on one line, and
            tighten it a little on phones so it still fits. */

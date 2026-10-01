@@ -28,7 +28,7 @@
  * Self-contained, direct-to-backend calls — same established pattern as
  * SubscribeScheduler/ClassCheckout/SubscriptionConfirm.
  */
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getSession } from '../lib/session';
@@ -62,6 +62,60 @@ function courseState(r) {
   return { label: 'In progress', cls: 'progress' };
 }
 
+// How far through the course this customer is: sessions done out of the total
+// for a session-capped course, or the share of the date range that has passed
+// for a date-bounded one. null = open-ended, nothing honest to draw.
+function courseProgress(r) {
+  const total = Number(r.occurrence_count);
+  const remaining = Number(r.remaining_occurrence_count);
+  if (Number(r.schedule_type) === 2 && total > 0 && !Number.isNaN(remaining)) {
+    const done = Math.min(total, Math.max(0, total - remaining));
+    return { pct: (done / total) * 100, label: `${done} of ${total} sessions done` };
+  }
+  const st = r.start_schedule ? new Date(r.start_schedule).getTime() : NaN;
+  const en = r.end_schedule ? new Date(r.end_schedule).getTime() : NaN;
+  if (!Number.isNaN(st) && !Number.isNaN(en) && en > st) {
+    const pct = Math.min(100, Math.max(0, ((Date.now() - st) / (en - st)) * 100));
+    return { pct, label: `${Math.round(pct)}% of the course` };
+  }
+  return null;
+}
+
+// The progress bar that stands in for the old "In progress" pill. The fill is
+// revealed with clip-path (paint only, no layout) once mounted, so it grows in
+// from empty; with reduced motion it just appears at its value.
+function CourseProgress({ r, state }) {
+  const prog = courseProgress(r);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  if (!prog) return null;
+  const pct = Math.round(prog.pct);
+  return (
+    <div className={`ms-prog ms-prog-${state}`}>
+      <div
+        className="ms-prog-track"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        aria-label={`Course progress: ${prog.label}`}
+      >
+        <span
+          className="ms-prog-fill"
+          style={{ clipPath: `inset(0 ${shown ? 100 - prog.pct : 100}% 0 0 round 999px)` }}
+        />
+      </div>
+      <p className="ms-prog-label">
+        <b>{prog.label}</b>
+        {state === 'paused' ? ' · Paused' : ''}
+      </p>
+    </div>
+  );
+}
+
 function fmtDate(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -73,6 +127,44 @@ function fmtTime(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
   const h12 = h % 12 || 12;
   return `${h12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+// ---- "home" helpers: turn a session row's date + time into a real moment ----
+// Session rows carry `date` (YYYY-MM-DD) and `start_time`/`end_time` (HH:MM),
+// the same wall-clock values the schedule below already shows as-is — read
+// here as the visitor's own local time.
+function toMoment(date, hhmm) {
+  if (!date) return null;
+  const [y, mo, d] = String(date).slice(0, 10).split('-').map(Number);
+  if (!y || !mo || !d) return null;
+  let h = 0, m = 0;
+  if (hhmm) {
+    const parts = String(hhmm).split(':').map(Number);
+    if (!Number.isNaN(parts[0])) h = parts[0];
+    if (!Number.isNaN(parts[1])) m = parts[1];
+  }
+  return new Date(y, mo - 1, d, h, m).getTime();
+}
+function dayLabel(ms, now) {
+  const d = new Date(ms);
+  const start = (t) => { const x = new Date(t); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const diffDays = Math.round((start(ms) - start(now)) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
+}
+function untilText(startMs, endMs, hasTime, now) {
+  if (!hasTime) {
+    const diffDays = Math.round((new Date(startMs).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86400000);
+    if (diffDays <= 0) return 'Today';
+    return diffDays === 1 ? 'Tomorrow' : `In ${diffDays} days`;
+  }
+  if (now >= startMs && now <= endMs) return 'Happening now';
+  const mins = Math.max(1, Math.round((startMs - now) / 60000));
+  if (mins < 60) return `Starts in ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `Starts in ${hrs}h${mins % 60 ? ` ${mins % 60}m` : ''}`;
+  const days = Math.floor(hrs / 24);
+  return `Starts in ${days} day${days > 1 ? 's' : ''}${hrs % 24 ? ` ${hrs % 24}h` : ''}`;
 }
 const yeloPost = (path, body) =>
   fetch(`${YELO_BASE}/${path}`, {
@@ -249,6 +341,83 @@ function ListView({ session }) {
     return () => { cancelled = true; };
   }, [session]);
 
+  // Every course's session schedule (same `recurring/list` call the course
+  // detail page uses), so the top of this page can answer "what's my next live
+  // class?" and the bottom can show sessions already done.
+  const [sched, setSched] = useState({ loading: true, byRule: {}, failed: 0 });
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
+    if (state !== 'ok') return;
+    let cancelled = false;
+    setSched({ loading: true, byRule: {}, failed: 0 });
+    const active = rules.filter((r) => Number(r.status) !== 2);
+    Promise.all(
+      active.map((r) =>
+        yeloPost('recurring/list', {
+          ...YELO_TENANT,
+          user_id: YELO_TENANT.marketplace_user_id, // required, not used to filter — see file header
+          vendor_id: session.vendorId,
+          access_token: session.token,
+          rule_id: r.rule_id,
+          limit: 100,
+          offset: 0,
+        }).then((j) =>
+          j?.status === 200 && j?.data
+            ? [r.rule_id, { upcoming: Array.isArray(j.data.upcoming) ? j.data.upcoming : [], completed: Array.isArray(j.data.completed) ? j.data.completed : [] }]
+            : [r.rule_id, null]
+        )
+      )
+    ).then((pairs) => {
+      if (cancelled) return;
+      setSched({
+        loading: false,
+        byRule: Object.fromEntries(pairs.filter(([, v]) => v)),
+        failed: pairs.filter(([, v]) => !v).length,
+      });
+    });
+    return () => { cancelled = true; };
+  }, [state, rules, session]);
+
+  const { next, comingUp, past } = useMemo(() => {
+    const byId = Object.fromEntries(rules.map((r) => [r.rule_id, r]));
+    const upcomingAll = [];
+    const pastAll = [];
+    for (const [id, v] of Object.entries(sched.byRule)) {
+      const r = byId[id];
+      if (!r) continue;
+      const cs = courseState(r);
+      const info = details[id] || {};
+      if (cs.cls === 'progress') {
+        for (const x of v.upcoming) {
+          if (x.is_skipped) continue;
+          const startMs = toMoment(x.date, x.start_time);
+          if (startMs == null) continue;
+          const hasTime = !!x.start_time;
+          const endMs = hasTime
+            ? (toMoment(x.date, x.end_time) ?? startMs + 60 * 60000)
+            : startMs + 86400000 - 60000;
+          if (endMs < now) continue;
+          upcomingAll.push({ r, x, startMs, endMs, hasTime, course: info.course, teacher: info.teacher });
+        }
+      }
+      for (const x of v.completed) {
+        if (x.is_skipped) continue;
+        const startMs = toMoment(x.date, x.start_time);
+        if (startMs == null) continue;
+        pastAll.push({ r, x, startMs, course: info.course, teacher: info.teacher });
+      }
+    }
+    upcomingAll.sort((a, b) => a.startMs - b.startMs);
+    pastAll.sort((a, b) => b.startMs - a.startMs);
+    return { next: upcomingAll[0] || null, comingUp: upcomingAll.slice(1, 4), past: pastAll.slice(0, 6) };
+  }, [sched, rules, details, now]);
+
+  const firstName = (session?.name || '').trim().split(/\s+/)[0] || '';
+
   if (state === 'loading') {
     return (
       <ul className="ms-grid" aria-hidden="true">
@@ -270,17 +439,139 @@ function ListView({ session }) {
   }
 
   return (
-    <ul className="ms-grid">
-      {rules.map((r) => (
-        <SubscriptionCard
-          key={r.rule_id}
-          r={r}
-          course={details[r.rule_id]?.course}
-          teacher={details[r.rule_id]?.teacher}
-          detailsLoading={detailsLoading}
-        />
-      ))}
-    </ul>
+    <>
+      <p className="ms-hello">{firstName ? `Welcome back, ${firstName}.` : 'Welcome back.'} Here's what's coming up.</p>
+
+      {sched.loading ? (
+        <div className="ms-next ms-next-skel" aria-hidden="true">
+          <span className="ms-skel-line" style={{ width: '30%' }} />
+          <span className="ms-skel-line" style={{ width: '65%', height: 22 }} />
+          <span className="ms-skel-line" style={{ width: '45%' }} />
+          <span className="ms-skel-line" style={{ width: '100%', height: 56, borderRadius: 999 }} />
+        </div>
+      ) : next ? (
+        <NextClass n={next} now={now} detailsLoading={detailsLoading} />
+      ) : (
+        <div className="ms-next ms-next-none">
+          <p className="ms-next-kicker">Next live class</p>
+          <h2 className="ms-next-title">{sched.failed && !Object.keys(sched.byRule).length ? "We couldn't load your schedule" : 'No live class coming up'}</h2>
+          <p className="ms-next-by">
+            {sched.failed && !Object.keys(sched.byRule).length
+              ? 'Try reloading the page in a moment.'
+              : 'Find something new to learn and pick a time.'}
+          </p>
+          <Link href="/stores" className="ms-join ms-join-ghost">Explore courses</Link>
+        </div>
+      )}
+
+      {comingUp.length > 0 && (
+        <div className="ms-block">
+          <h2 className="ms-h2">Coming up</h2>
+          <ul className="ms-list">
+            {comingUp.map((c) => (
+              <li key={`${c.r.rule_id}-${c.x.date}-${c.x.session}`} className="ms-lrow">
+                <span className="ms-lrow-when">
+                  <b>{dayLabel(c.startMs, now)}</b>
+                  <i>{c.hasTime ? fmtTime(c.x.start_time) : ''}</i>
+                </span>
+                <span className="ms-lrow-body">
+                  <span className="ms-lrow-name">{c.course || 'Your class'}</span>
+                  <span className="ms-lrow-meta">Session {c.x.session} of {c.x.total_sessions}{c.teacher ? ` · with ${c.teacher}` : ''}</span>
+                </span>
+                {c.x.meeting_link ? (
+                  <a className="ms-lrow-join" href={c.x.meeting_link} target="_blank" rel="noreferrer">Join</a>
+                ) : (
+                  <Link className="ms-lrow-view" href={`?rule=${c.r.rule_id}`}>Details</Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="ms-block">
+        <h2 className="ms-h2">All my courses</h2>
+        <ul className="ms-grid">
+          {rules.map((r) => (
+            <SubscriptionCard
+              key={r.rule_id}
+              r={r}
+              course={details[r.rule_id]?.course}
+              teacher={details[r.rule_id]?.teacher}
+              detailsLoading={detailsLoading}
+            />
+          ))}
+        </ul>
+      </div>
+
+      {past.length > 0 && (
+        <div className="ms-block">
+          <h2 className="ms-h2">Past sessions</h2>
+          <ul className="ms-list ms-list-past">
+            {past.map((c) => (
+              <li key={`${c.r.rule_id}-${c.x.date}-${c.x.session}`} className="ms-lrow">
+                <span className="ms-lrow-done" aria-hidden="true">
+                  <svg viewBox="0 0 16 16"><path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </span>
+                <span className="ms-lrow-body">
+                  <span className="ms-lrow-name">{c.course || 'Your class'}</span>
+                  <span className="ms-lrow-meta">
+                    Session {c.x.session} of {c.x.total_sessions} · {fmtDate(c.x.date) || c.x.date}
+                    {c.x.start_time ? ` · ${fmtTime(c.x.start_time)}` : ''}
+                  </span>
+                </span>
+                <Link className="ms-lrow-view" href={`?rule=${c.r.rule_id}`}>View course</Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+}
+
+// The big "next live class" card: what it is, when, how long until it starts,
+// and one large Join button. The link is the session's real `meeting_link`
+// — if the teacher hasn't shared it yet the button says so instead of
+// pretending (same rule the course schedule already follows).
+function NextClass({ n, now, detailsLoading }) {
+  const live = n.hasTime && now >= n.startMs && now <= n.endMs;
+  const time = fmtTime(n.x.start_time);
+  const end = fmtTime(n.x.end_time);
+  return (
+    <section className={`ms-next${live ? ' is-live' : ''}`} aria-label="Your next live class">
+      <p className="ms-next-kicker">{live ? 'Live now' : 'Next live class'}</p>
+      {detailsLoading ? (
+        <>
+          <span className="ms-name-skel" aria-hidden="true" style={{ width: '60%', height: 24 }} />
+          <span className="ms-name-skel" aria-hidden="true" style={{ width: 120, height: 12, marginTop: 8 }} />
+        </>
+      ) : (
+        <>
+          <h2 className="ms-next-title">{n.course || 'Your live class'}</h2>
+          <p className="ms-next-by">{n.teacher ? `with ${n.teacher} · ` : ''}Session {n.x.session} of {n.x.total_sessions}</p>
+        </>
+      )}
+      <p className="ms-next-when">
+        <strong>{dayLabel(n.startMs, now)}</strong>
+        {time ? ` · ${end ? `${time} – ${end}` : time}` : ''}
+        <span className="ms-next-count">{untilText(n.startMs, n.endMs, n.hasTime, now)}</span>
+      </p>
+      <div className="ms-next-actions">
+        {n.x.meeting_link ? (
+          <a className="ms-join" href={n.x.meeting_link} target="_blank" rel="noreferrer">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h5A1.5 1.5 0 0 1 10 4.5V6l3-1.8v7.6L10 10v1.5A1.5 1.5 0 0 1 8.5 13h-5A1.5 1.5 0 0 1 2 11.5z" fill="currentColor" /></svg>
+            {live ? 'Join now' : 'Join class'}
+          </a>
+        ) : (
+          <span className="ms-join is-wait" aria-disabled="true">Link not shared yet</span>
+        )}
+        <Link href={`?rule=${n.r.rule_id}`} className="ms-next-view">View course</Link>
+      </div>
+      {!n.x.meeting_link && (
+        <p className="ms-next-note">Your teacher shares the meeting link for each session. It will appear here as soon as it's ready.</p>
+      )}
+    </section>
   );
 }
 
@@ -306,8 +597,11 @@ function SubscriptionCard({ r, course, teacher, detailsLoading }) {
             </>
           )}
         </div>
-        <span className={`ms-badge ms-badge-${cs.cls}`}>{cs.label}</span>
+        {/* A running course shows a progress bar (below) instead of an "In progress" pill. */}
+        {cs.cls !== 'progress' && cs.cls !== 'paused' && <span className={`ms-badge ms-badge-${cs.cls}`}>{cs.label}</span>}
       </div>
+      {cs.cls !== 'declined' && <CourseProgress r={r} state={cs.cls} />}
+      {cs.cls === 'progress' && !courseProgress(r) && <span className="ms-badge ms-badge-progress" style={{ justifySelf: 'start' }}>Ongoing</span>}
       <dl className="ms-card-facts">
         <div><dt>Amount</dt><dd>₹{Number(r.amount || 0).toLocaleString()}</dd></div>
         <div><dt>Starts</dt><dd>{fmtDate(r.start_schedule) || '—'}</dd></div>
@@ -478,9 +772,10 @@ function Detail({ ruleId, session }) {
       <Link href="?" className="ms-back">← All courses</Link>
       <div className="ms-detail-top">
         <h2>{className || 'Class subscription'}</h2>
-        {(() => { const cs = courseState(rule); return <span className={`ms-badge ms-badge-${cs.cls}`}>{cs.label}</span>; })()}
+        {(() => { const cs = courseState(rule); return cs.cls !== 'progress' && cs.cls !== 'paused' ? <span className={`ms-badge ms-badge-${cs.cls}`}>{cs.label}</span> : null; })()}
       </div>
       <p className="ms-detail-sub">with {rule.merchant_name || 'the teacher'} · Recurring #{rule.rule_id}</p>
+      {(() => { const cs = courseState(rule); return cs.cls !== 'declined' ? <CourseProgress r={rule} state={cs.cls} /> : null; })()}
 
       <dl className="ms-detail-facts">
         {days && <div><dt>Days</dt><dd>{days}</dd></div>}
@@ -784,4 +1079,113 @@ const css = `
   .ms-srow-actions{ margin-left:50px; }
 }
 @media (prefers-reduced-motion: reduce){ .ms-tab{ transition:none; } }
+
+/* ---------- student "home": next class, coming up, past sessions ---------- */
+.ms-hello{ margin:-10px 0 20px; color:var(--brand-ink-soft); font-size:1rem; }
+.ms-block{ margin-top:34px; }
+.ms-h2{ font-family:var(--brand-font-display); font-weight:700; letter-spacing:-.01em; font-size:1.2rem; margin:0 0 14px; }
+
+.ms-next{
+  position:relative; overflow:hidden; display:grid; gap:8px;
+  padding:24px 22px 24px; border-radius:calc(var(--radius-lg) + 6px);
+  border:1px solid color-mix(in srgb, var(--brand-accent) 28%, var(--brand-line));
+  background:
+    radial-gradient(90% 120% at 100% 0%, color-mix(in srgb, var(--brand-accent) 16%, var(--brand-accent-soft)), var(--brand-accent-soft) 72%);
+  box-shadow:0 22px 48px -30px color-mix(in srgb, var(--brand-ink) 55%, transparent);
+}
+@media (min-width:640px){ .ms-next{ padding:30px 32px; } }
+.ms-next-kicker{
+  margin:0; font-size:.72rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--brand-accent);
+}
+.ms-next.is-live .ms-next-kicker::before{
+  content:""; display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%;
+  background:var(--brand-accent); vertical-align:middle;
+}
+.ms-next-title{
+  margin:2px 0 0; font-family:var(--brand-font-display); font-weight:700; letter-spacing:-.02em;
+  line-height:1.1; font-size:clamp(1.5rem, 5.4vw, 2.2rem); text-wrap:balance;
+}
+.ms-next-by{ margin:0; color:var(--brand-ink-soft); font-size:.95rem; }
+.ms-next-when{ margin:8px 0 0; display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; font-size:1.02rem; }
+.ms-next-count{
+  display:inline-block; padding:5px 12px; border-radius:980px; font-size:.82rem; font-weight:700;
+  background:var(--brand-surface); color:var(--brand-ink); border:1px solid var(--brand-line);
+}
+.ms-next-actions{ display:flex; flex-wrap:wrap; align-items:center; gap:12px 18px; margin-top:14px; }
+.ms-join{
+  display:inline-flex; align-items:center; justify-content:center; gap:10px;
+  min-height:56px; padding:0 34px; border-radius:980px; border:0; cursor:pointer;
+  background:var(--brand-accent); color:var(--brand-accent-ink);
+  font-family:var(--brand-font-display); font-weight:700; font-size:1.08rem; text-decoration:none;
+  box-shadow:0 14px 28px -14px color-mix(in srgb, var(--brand-accent) 70%, transparent);
+  transition:filter var(--motion) var(--motion-ease), transform var(--motion) var(--motion-ease);
+  touch-action:manipulation;
+}
+.ms-join svg{ width:20px; height:20px; }
+.ms-join:hover{ filter:brightness(1.07); }
+.ms-join:active{ transform:translateY(1px); }
+.ms-join.is-wait{
+  background:var(--brand-surface); color:var(--brand-ink-soft); box-shadow:none; cursor:default;
+  border:1px dashed var(--brand-line); font-size:.98rem; font-weight:650;
+}
+.ms-join.is-wait:hover{ filter:none; }
+.ms-join-ghost{ background:var(--brand-surface); color:var(--brand-accent); border:1px solid var(--brand-accent); box-shadow:none; justify-self:start; margin-top:8px; }
+@media (max-width:560px){ .ms-next-actions .ms-join{ width:100%; } }
+.ms-next-view{ color:var(--brand-accent); font-weight:650; font-size:.92rem; text-decoration:none; }
+.ms-next-view:hover{ text-decoration:underline; }
+.ms-next-note{ margin:4px 0 0; font-size:.82rem; color:var(--brand-ink-soft); max-width:52ch; }
+.ms-next-skel{ gap:14px; }
+.ms-next-none{ background:var(--brand-surface); border-color:var(--brand-line); box-shadow:none; }
+
+.ms-list{ list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+.ms-lrow{
+  display:flex; align-items:center; gap:14px; padding:14px 16px;
+  border:1px solid var(--brand-line); border-radius:var(--radius-lg); background:var(--brand-surface);
+}
+.ms-lrow-when{ flex:none; display:grid; min-width:84px; }
+.ms-lrow-when b{ font-family:var(--brand-font-display); font-size:.92rem; }
+.ms-lrow-when i{ font-style:normal; font-size:.8rem; color:var(--brand-ink-soft); }
+.ms-lrow-body{ flex:1; min-width:0; display:grid; gap:2px; }
+.ms-lrow-name{ font-weight:650; font-size:.95rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ms-lrow-meta{ font-size:.78rem; color:var(--brand-ink-soft); }
+.ms-lrow-join{
+  flex:none; display:inline-flex; align-items:center; min-height:40px; padding:0 18px; border-radius:980px;
+  background:var(--brand-accent); color:var(--brand-accent-ink); font-weight:700; font-size:.86rem; text-decoration:none;
+}
+.ms-lrow-join:hover{ filter:brightness(1.07); }
+.ms-lrow-view{ flex:none; color:var(--brand-accent); font-weight:650; font-size:.84rem; text-decoration:none; white-space:nowrap; }
+.ms-lrow-view:hover{ text-decoration:underline; }
+.ms-lrow-done{
+  flex:none; display:grid; place-items:center; width:30px; height:30px; border-radius:50%;
+  background:var(--brand-accent-soft); color:var(--brand-accent);
+}
+.ms-lrow-done svg{ width:14px; height:14px; }
+.ms-list-past .ms-lrow{ background:transparent; }
+@media (max-width:520px){
+  .ms-lrow{ flex-wrap:wrap; }
+  .ms-lrow-when{ min-width:0; grid-auto-flow:column; gap:8px; align-items:baseline; }
+  .ms-lrow-body{ flex-basis:100%; order:3; }
+}
+:where(.ms) .ms-join:focus-visible, :where(.ms) .ms-lrow-join:focus-visible, :where(.ms) .ms-lrow-view:focus-visible, :where(.ms) .ms-next-view:focus-visible{
+  outline:3px solid var(--brand-accent); outline-offset:3px; border-radius:980px;
+}
+@media (prefers-reduced-motion: reduce){ .ms-join{ transition:none; } }
+
+/* ---------- course progress bar (replaces the "In progress" pill) ---------- */
+.ms-prog{ display:grid; gap:6px; }
+.ms-prog-track{
+  position:relative; height:10px; border-radius:999px; overflow:hidden;
+  background:var(--brand-accent-soft); border:1px solid color-mix(in srgb, var(--brand-accent) 22%, var(--brand-line));
+}
+.ms-prog-fill{
+  position:absolute; inset:0; border-radius:999px;
+  background:var(--brand-accent);
+  transition:clip-path .9s var(--motion-ease);
+}
+.ms-prog-paused .ms-prog-fill{ background:var(--brand-ink-soft); }
+.ms-prog-label{ margin:0; font-size:.78rem; color:var(--brand-ink-soft); }
+.ms-prog-label b{ font-weight:650; color:var(--brand-ink); }
+.ms-detail .ms-prog{ margin:4px 0 18px; max-width:420px; }
+@media (prefers-reduced-motion: reduce){ .ms-prog-fill{ transition:none; } }
 `;

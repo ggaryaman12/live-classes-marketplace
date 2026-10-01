@@ -221,32 +221,88 @@ function ClassSearchInner({
   // "Load more" would otherwise fetch rows that only get filtered away.
   const clientOnlyFilterActive = !!q || availableOnly;
 
-  // A minimum above the current maximum (or the reverse) would silently zero
-  // out every result — nudge the other bound along instead of letting that
-  // happen, same as any real price-range control.
-  const setMinPrice = useCallback(
-    (v) => {
-      const nextMin = v === "50" ? "" : v;
-      const patch = { pmin: nextMin };
-      if (nextMin && pmax && Number(nextMin) > Number(pmax)) patch.pmax = nextMin;
-      setParam(patch);
-    },
-    [pmax, setParam]
-  );
-  const setMaxPrice = useCallback(
-    (v) => {
-      const nextMax = v === "2000" ? "" : v;
-      const patch = { pmax: nextMax };
-      if (nextMax && pmin && Number(nextMax) < Number(pmin)) patch.pmin = nextMax;
-      setParam(patch);
-    },
-    [pmin, setParam]
-  );
+  // SLIDERS: the price and age sliders used to write straight to the URL on
+  // every tick of a drag, and read their value back FROM the URL — which
+  // updates a beat later (and each tick also refetched the whole grid). The
+  // thumb lagged, snapped back and stuttered, so dragging felt broken. Now the
+  // thumbs move on local "draft" state instantly and the filter is applied
+  // once — when the finger/mouse lets go, or ~450ms after a keyboard change.
+  const [priceDraft, setPriceDraft] = useState({ min: pmin || "50", max: pmax || "2000" });
+  const [ageDraft, setAgeDraft] = useState(age || "10");
+  const draggingRef = useRef(false);
+  const dragKindRef = useRef("price");
+  const commitTimerRef = useRef(null);
+  const draftRef = useRef({});
+  draftRef.current = { min: priceDraft.min, max: priceDraft.max, age: ageDraft };
+  const commitRef = useRef(() => {});
+  commitRef.current = (which) => {
+    clearTimeout(commitTimerRef.current);
+    const d = draftRef.current;
+    if (which === "price") {
+      setParam({ pmin: d.min === "50" ? "" : d.min, pmax: d.max === "2000" ? "" : d.max });
+    } else {
+      setParam({ age: d.age });
+    }
+  };
+  // Keep the thumbs in step with the URL when it changes from outside (Clear
+  // all, browser back) — but never while a drag is in progress.
+  useEffect(() => {
+    if (!draggingRef.current) setPriceDraft({ min: pmin || "50", max: pmax || "2000" });
+  }, [pmin, pmax]);
+  useEffect(() => {
+    if (!draggingRef.current) setAgeDraft(age || "10");
+  }, [age]);
+  // Release anywhere on the page (the pointer often ends outside the input).
+  useEffect(() => {
+    const up = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      commitRef.current(dragKindRef.current);
+    };
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      clearTimeout(commitTimerRef.current);
+    };
+  }, []);
+  const startDrag = (kind) => {
+    draggingRef.current = true;
+    dragKindRef.current = kind;
+    clearTimeout(commitTimerRef.current);
+  };
+  const scheduleCommit = (kind) => {
+    if (draggingRef.current) return; // applied on release
+    clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = setTimeout(() => commitRef.current(kind), 450);
+  };
+  // A minimum above the maximum (or the reverse) would silently zero out every
+  // result — push the other bound along instead.
+  const onPriceInput = (which, v) => {
+    setPriceDraft((prev) => {
+      let min = which === "min" ? v : prev.min;
+      let max = which === "max" ? v : prev.max;
+      if (Number(min) > Number(max)) {
+        if (which === "min") max = min;
+        else min = max;
+      }
+      return { min, max };
+    });
+    scheduleCommit("price");
+  };
+  const onAgeInput = (v) => {
+    setAgeDraft(v);
+    scheduleCommit("age");
+  };
+  const priceTouched = priceDraft.min !== "50" || priceDraft.max !== "2000";
+  const ageShown = age ? ageDraft : ageDraft !== "10" ? ageDraft : "";
 
   // --- real, paginated data ---------------------------------------------
   const [state, setState] = useState("loading"); // loading | ok | error
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false); // phones/tablets: filters collapse behind a bar
   const [start, setStart] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const lastFetchAt = useRef(0);
@@ -377,14 +433,10 @@ function ClassSearchInner({
       <div className="cs-frame">
         <div className="cs-topline">
           <h2 id="bell-cs-h">{heading}</h2>
-          <p className="cs-placeholder-note">
-            Real, live listings from across this marketplace — {total.toLocaleString()} right
-            now. Price is filtered across the whole marketplace, not just
-            what's loaded; keyword and availability filter what's loaded
-            below. Subject and schedule aren't wired yet because individual
-            listings don't carry that information. No class here has an age
-            range set yet, so the age filter won't narrow anything down until
-            one does — it won't hide listings that simply haven't set one.
+          <p className="cs-lede">
+            {state === "ok" && total > 0
+              ? `${total.toLocaleString()} live classes to choose from. Pick one, pick a time, and jump in.`
+              : "Live classes with real teachers. Pick one, pick a time, and jump in."}
           </p>
         </div>
 
@@ -394,6 +446,17 @@ function ClassSearchInner({
             aria-label="Filter classes"
             onSubmit={(e) => e.preventDefault()}
           >
+            <button
+              type="button"
+              className="cs-filter-toggle"
+              aria-expanded={filtersOpen}
+              aria-controls="cs-rail-body"
+              onClick={() => setFiltersOpen((o) => !o)}
+            >
+              <span>Filters{activeCount ? ` · ${activeCount}` : ""}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+            <div className="cs-rail-body" id="cs-rail-body" data-open={filtersOpen}>
             <div className="cs-rail-head">
               <span>Filters{activeCount ? ` · ${activeCount}` : ""}</span>
               {activeCount > 0 && (
@@ -424,8 +487,8 @@ function ClassSearchInner({
 
             <fieldset>
               <legend>
-                Price per session{(pmin || pmax) && (
-                  <b> · ₹{pmin || 50}–{pmax ? `₹${pmax}` : "₹2000+"}</b>
+                Price per session{priceTouched && (
+                  <b> · ₹{priceDraft.min}–{priceDraft.max === "2000" ? "₹2000+" : `₹${priceDraft.max}`}</b>
                 )}
               </legend>
               <div className="cs-price-slider">
@@ -433,8 +496,8 @@ function ClassSearchInner({
                 <span
                   className="cs-price-fill"
                   style={{
-                    left: `${pricePct(pmin || 50)}%`,
-                    right: `${100 - pricePct(pmax || 2000)}%`,
+                    left: `${pricePct(priceDraft.min)}%`,
+                    right: `${100 - pricePct(priceDraft.max)}%`,
                   }}
                 />
                 <input
@@ -442,8 +505,9 @@ function ClassSearchInner({
                   min="50"
                   max="2000"
                   step="50"
-                  value={pmin || "50"}
-                  onChange={(e) => setMinPrice(e.target.value)}
+                  value={priceDraft.min}
+                  onPointerDown={() => startDrag("price")}
+                  onChange={(e) => onPriceInput("min", e.target.value)}
                   aria-label="Minimum price per session in rupees"
                 />
                 <input
@@ -451,8 +515,9 @@ function ClassSearchInner({
                   min="50"
                   max="2000"
                   step="50"
-                  value={pmax || "2000"}
-                  onChange={(e) => setMaxPrice(e.target.value)}
+                  value={priceDraft.max}
+                  onPointerDown={() => startDrag("price")}
+                  onChange={(e) => onPriceInput("max", e.target.value)}
                   aria-label="Maximum price per session in rupees"
                 />
               </div>
@@ -460,14 +525,15 @@ function ClassSearchInner({
             </fieldset>
 
             <fieldset>
-              <legend>Child's age {age && <b>· {age} yrs</b>}</legend>
+              <legend>Child's age {ageShown && <b>· {ageShown} yrs</b>}</legend>
               <input
                 type="range"
                 min="3"
                 max="18"
                 step="1"
-                value={age || "10"}
-                onChange={(e) => setParam({ age: e.target.value })}
+                value={ageDraft}
+                onPointerDown={() => startDrag("age")}
+                onChange={(e) => onAgeInput(e.target.value)}
                 aria-label="Child's age in years"
               />
               <div className="cs-range-ends"><span>3</span><span>18</span></div>
@@ -488,10 +554,18 @@ function ClassSearchInner({
                 <span>Only available classes</span>
               </label>
             </fieldset>
+            </div>
           </form>
 
           <div className="cs-results">
             <div className="cs-results-bar">
+              <p className="cs-count" aria-live="polite">
+                {state === "ok" && results.length > 0
+                  ? hasMore && !clientOnlyFilterActive
+                    ? `Showing ${results.length} of ${total.toLocaleString()} classes`
+                    : `${results.length} class${results.length === 1 ? "" : "es"}`
+                  : ""}
+              </p>
               <div className="cs-results-actions">
                 <label className="cs-sort">
                   <span>Sort</span>
@@ -607,16 +681,21 @@ function ClassCard({ c }) {
         />
         {ageLabel && <span className="cs-age-badge">{ageLabel}</span>}
         {unavailable && <span className="cs-unavailable-badge">Unavailable</span>}
+        <span className="cs-price-pill"><b>₹{Number(c.price || 0).toLocaleString()}</b> <i>/ session</i></span>
       </Link>
       <div className="cs-card-body">
-        {c.store_name && <p className="cs-card-subj">{c.store_name}</p>}
+        {c.store_name && (
+          <p className="cs-card-teacher">
+            <span className="cs-card-avatar" aria-hidden="true">{String(c.store_name).trim().charAt(0).toUpperCase()}</span>
+            <span className="cs-card-teacher-name">{c.store_name}</span>
+          </p>
+        )}
         <Link href={href} className="cs-card-title-link">
           <h3 className="cs-card-title">{c.name}</h3>
         </Link>
         <div className="cs-card-foot">
-          <span className="cs-price"><b>₹{Number(c.price || 0).toLocaleString()}</b> <i>/ session</i></span>
           <Link href={href} className="cs-view" data-full={unavailable}>
-            {unavailable ? "Unavailable" : "View class"}
+            {unavailable ? "Unavailable" : (<>View class <span aria-hidden="true" className="cs-view-arrow">→</span></>)}
           </Link>
         </div>
       </div>
@@ -628,8 +707,8 @@ const styles = `
 .bell-cs{ background:var(--brand-paper); color:var(--brand-ink); font-family:var(--brand-font-body); padding:48px 20px 80px; }
 @media (min-width:820px){ .bell-cs{ padding:64px 32px 104px; } }
 .cs-frame{ max-width:1200px; margin-inline:auto; }
-.cs-topline h2{ font-family:var(--brand-font-display); font-weight:600; letter-spacing:-.01em; font-size:clamp(1.5rem,3.6vw,2.1rem); margin:0 0 6px; }
-.cs-placeholder-note{ margin:0 0 28px; font-size:.82rem; color:var(--brand-ink-soft); max-width:68ch; }
+.cs-topline h2{ font-family:var(--brand-font-display); font-weight:700; letter-spacing:-.02em; font-size:clamp(1.7rem,4.4vw,2.5rem); margin:0 0 8px; }
+.cs-lede{ margin:0 0 28px; font-size:1.02rem; line-height:1.5; color:var(--brand-ink-soft); max-width:60ch; }
 
 .cs-layout{ display:grid; gap:28px; grid-template-columns:1fr; }
 @media (min-width:940px){ .cs-layout{ grid-template-columns:264px 1fr; align-items:start; } }
@@ -663,7 +742,7 @@ const styles = `
 .cs-check input{ margin-top:2px; accent-color:var(--brand-accent); width:15px; height:15px; }
 .cs-switch{ font-weight:500; }
 
-.cs-rail input[type="range"]{ width:100%; accent-color:var(--brand-accent); }
+.cs-rail input[type="range"]{ width:100%; accent-color:var(--brand-accent); min-height:32px; cursor:pointer; touch-action:pan-y; }
 
 /* One bar, two handles: two native range inputs stacked exactly on top of
    each other (each still its own real, independently focusable control —
@@ -677,7 +756,7 @@ const styles = `
    browser-dependent auto-positioning, which is what made the whole control
    look uncentered/squashed. Anchoring all four to the same vertical centre
    is the actual fix, not a cosmetic tweak. */
-.cs-price-slider{ position:relative; height:32px; margin-top:6px; }
+.cs-price-slider{ position:relative; height:36px; margin-top:6px; }
 .cs-price-track{
   position:absolute; top:50%; left:2px; right:2px; height:4px;
   border-radius:4px; transform:translateY(-50%);
@@ -689,22 +768,22 @@ const styles = `
   background:var(--brand-accent);
 }
 .cs-price-slider input[type="range"]{
-  position:absolute; top:50%; left:0; right:0; width:100%; height:16px;
-  margin:0; transform:translateY(-50%);
+  position:absolute; top:50%; left:0; right:0; width:100%; height:36px;
+  margin:0; transform:translateY(-50%); touch-action:pan-y;
   background:transparent; pointer-events:none;
   -webkit-appearance:none; appearance:none;
 }
-.cs-price-slider input[type="range"]::-webkit-slider-runnable-track{ background:transparent; height:16px; }
-.cs-price-slider input[type="range"]::-moz-range-track{ background:transparent; border:0; height:16px; }
+.cs-price-slider input[type="range"]::-webkit-slider-runnable-track{ background:transparent; height:36px; }
+.cs-price-slider input[type="range"]::-moz-range-track{ background:transparent; border:0; height:36px; }
 .cs-price-slider input[type="range"]::-webkit-slider-thumb{
   -webkit-appearance:none; pointer-events:auto; cursor:pointer;
-  width:18px; height:18px; margin-top:-1px; border-radius:50%;
+  width:26px; height:26px; margin-top:5px; border-radius:50%;
   background:var(--brand-accent); border:2px solid var(--brand-surface);
   box-shadow:0 1px 4px color-mix(in srgb, var(--brand-ink) 40%, transparent);
   transition:transform var(--motion) var(--motion-ease);
 }
 .cs-price-slider input[type="range"]::-moz-range-thumb{
-  pointer-events:auto; cursor:pointer; width:18px; height:18px; border-radius:50%;
+  pointer-events:auto; cursor:pointer; width:26px; height:26px; border-radius:50%;
   background:var(--brand-accent); border:2px solid var(--brand-surface);
   box-shadow:0 1px 4px color-mix(in srgb, var(--brand-ink) 40%, transparent);
   transition:transform var(--motion) var(--motion-ease);
@@ -800,5 +879,78 @@ const styles = `
   .cs-card{ transition:none; }
   .cs-card:hover{ transform:none; }
   .cs-skel-media, .cs-skel-line{ animation:none; }
+}
+
+/* ---------- Explore Courses polish ---------- */
+
+/* Filters collapse behind a bar on phones/tablets so the classes come first;
+   on wide screens the rail is always open and the bar is hidden. */
+.cs-filter-toggle{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  width:100%; min-height:48px; padding:10px 2px; border:0; background:transparent;
+  color:var(--brand-ink); font-family:var(--brand-font-display); font-weight:650; font-size:.95rem;
+  cursor:pointer; touch-action:manipulation; text-align:left;
+}
+.cs-filter-toggle svg{ transition:transform var(--motion) var(--motion-ease); color:var(--brand-accent); }
+.cs-filter-toggle[aria-expanded="true"] svg{ transform:rotate(180deg); }
+@media (max-width:939px){
+  .cs-rail-body{ display:none; }
+  .cs-rail-body[data-open="true"]{ display:block; border-top:1px solid var(--brand-line); }
+}
+@media (max-width:939px){
+  .cs-rail-head span{ display:none; }
+  .cs-rail-head{ justify-content:flex-end; }
+}
+@media (min-width:940px){ .cs-filter-toggle{ display:none; } }
+
+.cs-results-bar{ justify-content:space-between; }
+.cs-count{ margin:0; font-size:.88rem; font-weight:600; color:var(--brand-ink-soft); }
+
+.cs-grid{ gap:20px; }
+.cs-card{ border-radius:calc(var(--radius-lg) + 4px); }
+.cs-card:hover{ border-color:color-mix(in srgb, var(--brand-accent) 45%, var(--brand-line)); }
+.cs-card-media img{ transition:transform .5s var(--motion-ease); }
+.cs-card:hover .cs-card-media img{ transform:scale(1.05); }
+/* soft scrim so the price pill always reads on any photo; tokens only */
+.cs-card-media::after{
+  content:""; position:absolute; inset:auto 0 0 0; height:42%; pointer-events:none;
+  background:linear-gradient(to top, color-mix(in srgb, var(--brand-ink) 42%, transparent), transparent);
+}
+.cs-price-pill{
+  position:absolute; right:10px; bottom:10px; z-index:1;
+  display:inline-flex; align-items:baseline; gap:4px;
+  padding:6px 12px; border-radius:980px;
+  background:var(--brand-surface); color:var(--brand-ink);
+  box-shadow:0 6px 16px -8px color-mix(in srgb, var(--brand-ink) 60%, transparent);
+}
+.cs-price-pill b{ font-family:var(--brand-font-display); font-size:1rem; font-variant-numeric:tabular-nums; }
+.cs-price-pill i{ font-style:normal; font-size:.72rem; color:var(--brand-ink-soft); }
+.cs-age-badge, .cs-unavailable-badge{ z-index:1; }
+
+.cs-card-body{ gap:8px; padding:16px 16px 16px; flex:1; }
+.cs-card-teacher{ display:flex; align-items:center; gap:8px; margin:0; min-width:0; }
+.cs-card-avatar{
+  flex:none; display:grid; place-items:center; width:26px; height:26px; border-radius:50%;
+  background:var(--brand-accent-soft); color:var(--brand-accent);
+  font-family:var(--brand-font-display); font-weight:700; font-size:.78rem;
+}
+.cs-card-teacher-name{ font-size:.82rem; font-weight:600; color:var(--brand-ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cs-card-title{ font-size:1.12rem; font-weight:650; }
+.cs-card-foot{ margin-top:auto; padding-top:6px; }
+.cs-view{
+  display:inline-flex; align-items:center; gap:6px; min-height:44px;
+  padding:10px 18px; font-size:.86rem;
+  transition:background var(--motion) var(--motion-ease), color var(--motion) var(--motion-ease), border-color var(--motion) var(--motion-ease);
+}
+.cs-view:hover{ background:var(--brand-accent); border-color:var(--brand-accent); color:var(--brand-accent-ink); }
+.cs-view-arrow{ transition:transform var(--motion) var(--motion-ease); }
+.cs-view:hover .cs-view-arrow{ transform:translateX(3px); }
+
+.cs-rail{ border-radius:calc(var(--radius-lg) + 4px); }
+
+@media (prefers-reduced-motion: reduce){
+  .cs-card-media img, .cs-view-arrow, .cs-filter-toggle svg{ transition:none; }
+  .cs-card:hover .cs-card-media img{ transform:none; }
+  .cs-view:hover .cs-view-arrow{ transform:none; }
 }
 `;

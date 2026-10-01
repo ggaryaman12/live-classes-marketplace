@@ -348,7 +348,10 @@ const css = `
 @media (min-width:480px){ .bh-search button{ flex:0 0 auto; } }
 .bh-search button:hover{ filter:brightness(1.06); }
 .bh-search button:active{ transform:translateY(1px); }
-.bh-search:focus-within{ border-color:var(--brand-accent); }
+/* Focus: no red border. The row gets a soft tint ring instead so keyboard
+   users can still see where they are; the input itself draws no outline. */
+.bh-search:focus-within{ box-shadow:0 0 0 4px color-mix(in srgb, var(--brand-accent) 14%, transparent), 0 18px 44px -26px color-mix(in srgb, var(--brand-ink) 55%, transparent); }
+.bh-search input:focus, .bh-search input:focus-visible{ outline:none; box-shadow:none; }
 
 .bh-reassure{
   margin:0; font-size:13px; color:var(--brand-ink-soft); line-height:1.6;
@@ -414,8 +417,7 @@ const css = `
 @keyframes bh-drift{ 0%,100%{ translate:0 0; } 50%{ translate:0 -9px; } }
 
 :where(.bell-hero) a:focus-visible,
-:where(.bell-hero) button:focus-visible,
-:where(.bell-hero) input:focus-visible{
+:where(.bell-hero) button:focus-visible{
   outline:3px solid var(--brand-accent);
   outline-offset:2px; border-radius:6px;
 }

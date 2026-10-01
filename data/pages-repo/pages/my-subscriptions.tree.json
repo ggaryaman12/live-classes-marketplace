@@ -7,14 +7,16 @@
       "id": "p1",
       "type": "Page",
       "props": {},
-      "children": ["list"]
+      "children": [
+        "list"
+      ]
     },
     "list": {
       "id": "list",
       "type": "Custom",
       "props": {
         "component": "MySubscriptions",
-        "heading": "My enrolled courses"
+        "heading": "My courses"
       }
     }
   }
