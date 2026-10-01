@@ -1,0 +1,10 @@
+{
+  "format": "yelo-studio-export/1",
+  "sourceTenantId": "510012362__live-classes-markeptlace-2",
+  "managed": {
+    "pages": "data/tenants/510012362__live-classes-markeptlace-2/pages",
+    "components": "app/custom",
+    "chrome": "app/chrome",
+    "tokens": "app/custom/tokens.css"
+  }
+}

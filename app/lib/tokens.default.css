@@ -1,0 +1,56 @@
+/* ============================================================
+   THE THEME CONTRACT — the whole site's design tokens.
+
+   THIS FILE IS OVERWRITTEN PER WORKSPACE. app/lib/customSync.js mirrors the
+   active workspace's own `tokens.css` (written by the build AI, per the
+   constitution's S4 step) over the top of it before every build. What is
+   committed here are the DEFAULTS: the "market hall" direction, byte-identical
+   to what globals.css used to hardcode, so a workspace that has not written
+   tokens yet renders exactly as it always did.
+
+   WHY IT IS A SEPARATE FILE AND NEVER DELETED. Same reason as Placeholder.jsx
+   next door: app/layout.jsx imports this path statically, and a static import
+   of a missing file is a BUILD failure, not a degraded page. customSync
+   rewrites its contents and never unlinks it.
+
+   THE CONTRACT IS CLOSED. Exactly the custom properties below, all of them, in
+   one flat :root block, one declaration per line. Not a style guide — a parsed
+   interface: the Design panel enumerates these names to offer live editing, and
+   globals.css derives every piece of site chrome from them. A token invented
+   outside this list themes nothing; a token missing from it falls back and
+   silently keeps the default palette.
+   ============================================================ */
+:root {
+  /* Ink and ground */
+  --brand-ink: #101413;
+  --brand-ink-soft: #3A4441;
+  --brand-paper: #FCFCFA;
+  --brand-surface: #FFFFFF;
+  --brand-line: #E6E8E4;
+
+  /* Brand */
+  --brand-accent: #14532D;
+  --brand-accent-soft: #EEF5F0;
+  --brand-accent-ink: #FFFFFF;
+
+  /* Type */
+  --brand-font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --brand-font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Shape */
+  --radius: 10px;
+  --radius-lg: 14px;
+
+  /* Motion. --motion is the base duration every transition scales from; setting
+     it to 0s is the honest way for a direction to opt out of movement. The
+     reduced-motion override in globals.css is enforced separately and is not
+     the tenant's to switch off. */
+  --motion: 140ms;
+  --motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* The pointer. A single glyph the storefront trails behind the real cursor —
+     a pencil for a stationer, a key for a letting agent. `none` keeps the
+     ordinary system cursor, which is the right answer for anything trust-first.
+     Ignored entirely on touch and under prefers-reduced-motion. */
+  --cursor: none;
+}

@@ -1,0 +1,151 @@
+{
+  "_comment": "THE THEME CONTRACT — the single list, shared by every side. JSON on purpose: a client component (LiveRefresh) and the Studio panel import it, while customSync and platform/theme require it. A .js module with module.exports would be CommonJS in a client bundle, which breaks hydration — see tests/suites/browsertruth.test.js. Data only, no logic.",
+  "TOKEN_CONTRACT": [
+    "brand-ink",
+    "brand-ink-soft",
+    "brand-paper",
+    "brand-surface",
+    "brand-line",
+    "brand-accent",
+    "brand-accent-soft",
+    "brand-accent-ink",
+    "brand-font-display",
+    "brand-font-body",
+    "radius",
+    "radius-lg",
+    "motion",
+    "motion-ease",
+    "cursor"
+  ],
+  "TOKEN_META": {
+    "brand-ink": {
+      "kind": "color",
+      "group": "Ink",
+      "label": "Body text"
+    },
+    "brand-ink-soft": {
+      "kind": "color",
+      "group": "Ink",
+      "label": "Secondary text"
+    },
+    "brand-paper": {
+      "kind": "color",
+      "group": "Ink",
+      "label": "Page background"
+    },
+    "brand-surface": {
+      "kind": "color",
+      "group": "Ink",
+      "label": "Card background"
+    },
+    "brand-line": {
+      "kind": "color",
+      "group": "Ink",
+      "label": "Borders"
+    },
+    "brand-accent": {
+      "kind": "color",
+      "group": "Brand",
+      "label": "Brand colour"
+    },
+    "brand-accent-soft": {
+      "kind": "color",
+      "group": "Brand",
+      "label": "Brand tint"
+    },
+    "brand-accent-ink": {
+      "kind": "color",
+      "group": "Brand",
+      "label": "Text on brand"
+    },
+    "brand-font-display": {
+      "kind": "font",
+      "group": "Type",
+      "label": "Headings"
+    },
+    "brand-font-body": {
+      "kind": "font",
+      "group": "Type",
+      "label": "Body"
+    },
+    "radius": {
+      "kind": "length",
+      "group": "Shape",
+      "label": "Corner radius",
+      "min": 0,
+      "max": 32,
+      "step": 1,
+      "unit": "px"
+    },
+    "radius-lg": {
+      "kind": "length",
+      "group": "Shape",
+      "label": "Large radius",
+      "min": 0,
+      "max": 48,
+      "step": 1,
+      "unit": "px"
+    },
+    "motion": {
+      "kind": "duration",
+      "group": "Motion",
+      "label": "Speed",
+      "min": 0,
+      "max": 800,
+      "step": 10,
+      "unit": "ms"
+    },
+    "motion-ease": {
+      "kind": "ease",
+      "group": "Motion",
+      "label": "Easing"
+    },
+    "cursor": {
+      "kind": "glyph",
+      "group": "Motion",
+      "label": "Pointer"
+    }
+  },
+  "TOKEN_GROUPS": [
+    "Ink",
+    "Brand",
+    "Type",
+    "Shape",
+    "Motion"
+  ],
+  "EASINGS": [
+    {
+      "label": "Standard",
+      "value": "cubic-bezier(0.4, 0, 0.2, 1)"
+    },
+    {
+      "label": "Gentle",
+      "value": "cubic-bezier(0.16, 1, 0.3, 1)"
+    },
+    {
+      "label": "Snappy",
+      "value": "cubic-bezier(0.2, 0, 0, 1)"
+    },
+    {
+      "label": "Linear",
+      "value": "linear"
+    }
+  ],
+  "_themes": {
+    "_comment": "A storefront carries TWO token sets. Light is the base (:root); dark overrides the same names under [data-theme=\"dark\"]. The names are identical in both — a token that exists in one and not the other is a half-theme, and the switch would produce a broken page.",
+    "MODES": [
+      "light",
+      "dark"
+    ],
+    "DARK_DEFAULT": {
+      "brand-ink": "#F2EFEA",
+      "brand-ink-soft": "#A9A29A",
+      "brand-paper": "#12100E",
+      "brand-surface": "#1B1815",
+      "brand-line": "#2E2A26",
+      "brand-accent": "#E08A5F",
+      "brand-accent-soft": "#2A211C",
+      "brand-accent-ink": "#12100E"
+    }
+  }
+}

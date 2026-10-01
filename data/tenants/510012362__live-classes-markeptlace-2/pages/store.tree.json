@@ -1,0 +1,80 @@
+{
+  "schema": "yelo.tree/1",
+  "page": "store",
+  "root": "p1",
+  "nodes": {
+    "p1": {
+      "id": "p1",
+      "type": "Page",
+      "props": {},
+      "children": [
+        "meetInstructor",
+        "approach",
+        "cat1",
+        "reviews",
+        "faq",
+        "trust",
+        "chat"
+      ]
+    },
+    "meetInstructor": {
+      "id": "meetInstructor",
+      "type": "Custom",
+      "props": {
+        "component": "MeetTheInstructor",
+        "heading": "Meet the instructor",
+        "backLabel": "← All teachers",
+        "browseHref": "/"
+      }
+    },
+    "approach": {
+      "id": "approach",
+      "type": "Custom",
+      "props": {
+        "component": "TeacherApproach",
+        "eyebrow": "How a class runs",
+        "statement": "Live means a real teacher, a set time each week, and a room small enough that your child is seen."
+      }
+    },
+    "cat1": {
+      "id": "cat1",
+      "type": "Custom",
+      "props": {
+        "component": "LiveCatalogue",
+        "heading": "Classes with this teacher"
+      }
+    },
+    "reviews": {
+      "id": "reviews",
+      "type": "Custom",
+      "props": {
+        "component": "WhatParentsSay",
+        "heading": "What families say"
+      }
+    },
+    "faq": {
+      "id": "faq",
+      "type": "Custom",
+      "props": {
+        "component": "TeacherFAQ",
+        "heading": "Questions parents ask"
+      }
+    },
+    "trust": {
+      "id": "trust",
+      "type": "Custom",
+      "props": {
+        "component": "TeacherTrust",
+        "heading": "Enrolling with this teacher",
+        "browseHref": "/stores"
+      }
+    },
+    "chat": {
+      "id": "chat",
+      "type": "Custom",
+      "props": {
+        "component": "HippoChatLauncher"
+      }
+    }
+  }
+}

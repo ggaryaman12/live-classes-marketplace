@@ -1,0 +1,24 @@
+{
+  "schema": "yelo.tree/1",
+  "page": "class",
+  "root": "p1",
+  "nodes": {
+    "p1": {
+      "id": "p1",
+      "type": "Page",
+      "props": {},
+      "children": [
+        "detail"
+      ]
+    },
+    "detail": {
+      "id": "detail",
+      "type": "Custom",
+      "props": {
+        "component": "ClassDetail",
+        "backLabel": "← All classes",
+        "browseHref": "/stores"
+      }
+    }
+  }
+}
