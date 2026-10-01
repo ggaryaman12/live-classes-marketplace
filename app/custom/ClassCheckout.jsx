@@ -484,9 +484,22 @@ function ClassCheckoutInner({
       if (cancelled) return;
       if (json?.status === 200 && json?.data) {
         const b = json.data;
+        // THE CRASH: OCCURRENCE_COUNT can come back as `{}` instead of being
+        // absent — same known shape as CURRENCY below (customer_open_apis.js:2835),
+        // just never noticed here because `?? null` treats `{}` as a real value.
+        // Unlike perSession/total (only ever shown through money()/template
+        // literals, which silently stringify anything), `occurrences` is
+        // rendered as a bare JSX child a few lines down ("Ends after {…}
+        // sessions" and the "Sessions" row) — handing that an object throws
+        // React error #31 ("object with keys {}") and takes the whole section
+        // down. Coerce to a real number or null right here, once, so nothing
+        // downstream has to guess.
+        const rawOccurrences = b.OCCURRENCE_COUNT;
+        const occurrenceCount =
+          rawOccurrences != null && typeof rawOccurrences !== 'object' ? Number(rawOccurrences) : NaN;
         setRecurringBill({
           perSession: b.NET_PAYABLE_AMOUNT ?? item.price,
-          occurrences: b.OCCURRENCE_COUNT ?? null,
+          occurrences: Number.isFinite(occurrenceCount) ? occurrenceCount : null,
           total: b.TOTAL_RECURRING_AMOUNT ?? b.NET_PAYABLE_AMOUNT ?? null,
         });
         setRecurringBillState('real');

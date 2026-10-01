@@ -16,6 +16,7 @@ import * as m_CreateAccount from './CreateAccount.jsx';
 import * as m_DatePicker from './DatePicker.jsx';
 import * as m_EnrollConfirm from './EnrollConfirm.jsx';
 import * as m_EnrollHeader from './EnrollHeader.jsx';
+import * as m_HeaderProfileMenu from './HeaderProfileMenu.jsx';
 import * as m_HippoChatLauncher from './HippoChatLauncher.jsx';
 import * as m_HowLiveWorks from './HowLiveWorks.jsx';
 import * as m_LiveCatalogue from './LiveCatalogue.jsx';
@@ -64,6 +65,7 @@ export const CUSTOM = Object.fromEntries(Object.entries({
   DatePicker: pick(m_DatePicker, 'DatePicker'),
   EnrollConfirm: pick(m_EnrollConfirm, 'EnrollConfirm'),
   EnrollHeader: pick(m_EnrollHeader, 'EnrollHeader'),
+  HeaderProfileMenu: pick(m_HeaderProfileMenu, 'HeaderProfileMenu'),
   HippoChatLauncher: pick(m_HippoChatLauncher, 'HippoChatLauncher'),
   HowLiveWorks: pick(m_HowLiveWorks, 'HowLiveWorks'),
   LiveCatalogue: pick(m_LiveCatalogue, 'LiveCatalogue'),

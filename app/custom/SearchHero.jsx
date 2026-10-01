@@ -259,7 +259,9 @@ const css = `
 @media (min-width:480px){ .bsh-search button{ flex:0 0 auto; } }
 .bsh-search button:hover{ filter:brightness(1.06); }
 .bsh-search button:active{ transform:translateY(1px); }
-.bsh-search:focus-within{ border-color:var(--brand-accent); }
+/* Focus: no red border — a soft tint ring keeps the focus position visible. */
+.bsh-search:focus-within{ box-shadow:0 0 0 4px color-mix(in srgb, var(--brand-accent) 14%, transparent), 0 18px 44px -26px color-mix(in srgb, var(--brand-ink) 55%, transparent); }
+.bsh-search input:focus, .bsh-search input:focus-visible{ outline:none; box-shadow:none; }
 .bsh-hint{ margin:0; font-size:13px; line-height:1.55; color:var(--brand-ink-soft); max-width:52ch; }
 
 /* ---------- collage (wide screens only): three parallax layers ---------- */
@@ -308,8 +310,7 @@ const css = `
 @keyframes bsh-drift{ 0%,100%{ translate:0 0; } 50%{ translate:0 -8px; } }
 
 .bsh-vh{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
-:where(.bell-search-hero) button:focus-visible,
-:where(.bell-search-hero) input:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; border-radius:6px; }
+:where(.bell-search-hero) button:focus-visible{ outline:3px solid var(--brand-accent); outline-offset:2px; border-radius:6px; }
 
 @media (prefers-reduced-motion: reduce){
   .bsh-layer{ transform:none !important; }
