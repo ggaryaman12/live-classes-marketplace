@@ -1,0 +1,23 @@
+{
+  "schema": "yelo.tree/1",
+  "page": "teacher-onboarding",
+  "root": "p1",
+  "nodes": {
+    "p1": {
+      "id": "p1",
+      "type": "Page",
+      "props": {},
+      "children": ["onboarding"]
+    },
+    "onboarding": {
+      "id": "onboarding",
+      "type": "Custom",
+      "props": {
+        "component": "TeacherOnboarding",
+        "eyebrow": "Teach on this marketplace",
+        "title": "Bring your class online",
+        "subtitle": "Set your own price, your own schedule, and meet students live. It's the same account every teacher here already has."
+      }
+    }
+  }
+}

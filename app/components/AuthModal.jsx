@@ -13,6 +13,7 @@
 // which injects the tenant envelope server-side and calls the marketplace
 // vendor endpoints. On success, stores the session (vendor_id + access_token).
 import { useState } from 'react';
+import Link from 'next/link';
 import { setSession } from '../lib/session';
 import { phoneNo, sessionFromLogin } from '../lib/auth';
 import { apiPath } from '../lib/apiPath';
@@ -93,6 +94,16 @@ export default function AuthModal({ open, onClose, onAuthed }) {
           <button className={mode === 'email' ? 'on' : ''} onClick={() => { setMode('email'); setMsg(null); }}>Email</button>
         </div>
 
+        {/* This is the customer sign-in/up modal — teaching is a different
+            account entirely (a real merchant signup, see TeacherOnboarding.jsx),
+            so this is a way out of this modal into that flow, not another mode
+            of it. Closes this modal on click so it doesn't sit open over the
+            page it navigates to. */}
+        <p className="auth-become">
+          Want to teach here instead?{' '}
+          <Link href="/p/teacher-onboarding" onClick={onClose}>Become a teacher</Link>
+        </p>
+
         {mode === 'phone' && step === 'enter' && (
           <>
             <label className="auth-l">Phone number</label>
@@ -134,6 +145,12 @@ export default function AuthModal({ open, onClose, onAuthed }) {
             </button>
           </>
         )}
+
+        <style>{`
+          .auth-become{ margin:14px 0 0; text-align:center; font-size:.82rem; color:var(--brand-ink-soft, inherit); }
+          .auth-become a{ font-weight:650; color:var(--brand-accent, inherit); text-decoration:underline; text-underline-offset:2px; }
+          .auth-become a:hover{ filter:brightness(1.06); }
+        `}</style>
       </div>
     </div>
   );

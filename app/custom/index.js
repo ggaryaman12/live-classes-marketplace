@@ -35,10 +35,12 @@ import * as m_TeacherApproach from './TeacherApproach.jsx';
 import * as m_TeacherDirectory from './TeacherDirectory.jsx';
 import * as m_TeacherEditorial from './TeacherEditorial.jsx';
 import * as m_TeacherFAQ from './TeacherFAQ.jsx';
+import * as m_TeacherOnboarding from './TeacherOnboarding.jsx';
 import * as m_TeacherTrust from './TeacherTrust.jsx';
 import * as m_TrustStrip from './TrustStrip.jsx';
 import * as m_UpcomingClasses from './UpcomingClasses.jsx';
 import * as m_WhatParentsSay from './WhatParentsSay.jsx';
+import * as m_teacherSignupApi from './teacherSignupApi.jsx';
 
 function isComp(v) {
   if (typeof v === 'function') return true;              // function or class component
@@ -84,8 +86,10 @@ export const CUSTOM = Object.fromEntries(Object.entries({
   TeacherDirectory: pick(m_TeacherDirectory, 'TeacherDirectory'),
   TeacherEditorial: pick(m_TeacherEditorial, 'TeacherEditorial'),
   TeacherFAQ: pick(m_TeacherFAQ, 'TeacherFAQ'),
+  TeacherOnboarding: pick(m_TeacherOnboarding, 'TeacherOnboarding'),
   TeacherTrust: pick(m_TeacherTrust, 'TeacherTrust'),
   TrustStrip: pick(m_TrustStrip, 'TrustStrip'),
   UpcomingClasses: pick(m_UpcomingClasses, 'UpcomingClasses'),
   WhatParentsSay: pick(m_WhatParentsSay, 'WhatParentsSay'),
+  teacherSignupApi: pick(m_teacherSignupApi, 'teacherSignupApi'),
 }).filter(([, v]) => v));

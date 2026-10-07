@@ -51,10 +51,12 @@
       "TeacherDirectory.jsx",
       "TeacherEditorial.jsx",
       "TeacherFAQ.jsx",
+      "TeacherOnboarding.jsx",
       "TeacherTrust.jsx",
       "TrustStrip.jsx",
       "UpcomingClasses.jsx",
-      "WhatParentsSay.jsx"
+      "WhatParentsSay.jsx",
+      "teacherSignupApi.jsx"
     ],
     "pages": [
       "checkout.tree.json",
@@ -63,7 +65,8 @@
       "merchant-listing.tree.json",
       "my-subscriptions.tree.json",
       "profile.tree.json",
-      "store.tree.json"
+      "store.tree.json",
+      "teacher-onboarding.tree.json"
     ]
   },
   "runtime": {
