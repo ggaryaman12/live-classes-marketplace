@@ -5,7 +5,7 @@
 // unavailable products, single-merchant cart, add-to-cart — live inside the
 // Catalogue component and are unchanged by tree-driving the page.
 import Link from 'next/link';
-import { getAppConfig, getStore, getCatalogue, flattenCategories } from '../../lib/api';
+import { getAppConfig, getStore, getCatalogue, getStorefronts, flattenCategories } from '../../lib/api';
 import { resolvePageTree, modeFrom } from '../../lib/pages';
 import TreeRenderer from '../../lib/TreeRenderer';
 
@@ -14,9 +14,19 @@ export const dynamic = 'force-dynamic';
 export default async function StorePage({ params, searchParams }) {
   const { id } = await params;
   const cfg = await getAppConfig();
+  // A NON-NUMERIC id means "show a representative store" — the Studio previews the
+  // shared store-page layout via /store/preview because the store page has no URL
+  // of its own (it needs a merchant id). Resolve it to the first real merchant so
+  // the layout (and anything built onto it) renders and can be scrolled to. Real
+  // store ids are numeric, so this only catches the sentinel, never a real store.
+  let storeId = id;
+  if (!/^\d+$/.test(String(id))) {
+    const list = await getStorefronts(cfg.latitude, cfg.longitude);
+    storeId = (list[0] && list[0].id) || id;
+  }
   const [store, catalogue] = await Promise.all([
-    getStore(id, cfg.latitude, cfg.longitude),
-    getCatalogue(id, cfg.latitude, cfg.longitude),
+    getStore(storeId, cfg.latitude, cfg.longitude),
+    getCatalogue(storeId, cfg.latitude, cfg.longitude),
   ]);
 
   if (!store) {

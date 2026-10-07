@@ -2,7 +2,6 @@
 
 import { useCallback, useRef, useState, useEffect } from "react";
 import Link from "next/link";
-import { YELO_BASE, YELO_TENANT as TENANT } from "../lib/yeloTenant";
 
 /**
  * LiveClasses — every product currently listed across this whole marketplace
@@ -25,8 +24,8 @@ import { YELO_BASE, YELO_TENANT as TENANT } from "../lib/yeloTenant";
  * the backend.
  */
 
-// This endpoint takes a slimmer envelope than the shared one — same tenant.
-const YELO_TENANT = { marketplace_user_id: TENANT.marketplace_user_id, language: TENANT.language, app_type: "WEB" };
+const YELO_BASE = "https://test-api-3025.jungleworks.com";
+const YELO_TENANT = { marketplace_user_id: 510009445, language: "en", app_type: "WEB" };
 const PAGE_SIZE = 50;
 const THROTTLE_MS = 600;
 

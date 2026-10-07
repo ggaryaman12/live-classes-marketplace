@@ -13,6 +13,42 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = process.env.STUDIO_DATA_ROOT || path.join(process.cwd(), '..');
+
+// AM I THE STUDIO, OR AN EXPORTED PROJECT SOMEBODY CLONED?
+//
+// THE ROOT CAUSE OF THE THREE-DAY BUG, and the reason patching it twice did not
+// hold. Everything below exists to solve a problem that ONLY the Studio has: one
+// app directory serves many tenants, so the active tenant's components and chrome
+// have to be mirrored in from the data volume before each build. In that world
+// `app/custom` and `app/chrome` are BUILD OUTPUT — derived, disposable,
+// regenerated per tenant, and correctly deleted when they belong to someone else.
+//
+// An exported project is the opposite world. It has exactly one tenant, and its
+// `app/custom/*.jsx` and `app/chrome/*.jsx` are COMMITTED SOURCE — the developer's
+// own files, in their own repo, which they are meant to open and edit. Running the
+// mirror there is not merely pointless, it is destructive in both directions:
+//
+//   • Studio → local: the mirror found no data/tenants/<id>/chrome, concluded the
+//     project owned no chrome, DELETED the header/cart/checkout the export had
+//     shipped and emptied the registry — so `npm run dev` served the stock
+//     "market" storefront and the work looked lost.
+//   • local → Studio: a developer edits app/chrome/Header.jsx, the next render
+//     overwrites it from the data copy, and their edit silently disappears.
+//
+// Bundling the missing directory fixes the first and makes the second WORSE (now
+// there is a stale copy to overwrite from). The actual fix is to not run at all:
+// in an export the files on disk are the truth, there is nothing to mirror, and
+// the only correct action is none.
+//
+// Detected STRUCTURALLY, from the export manifest on disk — not from an env var a
+// developer could unset, not from NODE_ENV. `.yelo-studio.json` exists in an
+// export and never in the Studio, so this cannot be got wrong by configuration.
+const STANDALONE = (() => {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), '.yelo-studio.json'), 'utf8'));
+    return manifest?.format === 'yelo-studio-export/1' && manifest?.standalone === true;
+  } catch { return false; }
+})();
 const CUSTOM_DIR = path.join(process.cwd(), 'app', 'custom');
 // Editable site chrome: the project's own copies live in its worktree `chrome/`
 // dir; the shipped app/components are the defaults. Mirrored into app/chrome so
@@ -64,6 +100,11 @@ function srcDirFor(tenantId) {
 // pre-build sync in platform/previewPool.js) or in dev (next dev needs the files
 // on disk for HMR). A normal production request is a no-op.
 function syncCustom({ force = false } = {}) {
+  // AN EXPORTED PROJECT MIRRORS NOTHING. Its app/custom and app/chrome are the
+  // developer's committed source, not this function's output. See STANDALONE.
+  // Deliberately ahead of the `force` check: there is no caller and no flag that
+  // should be able to make an export overwrite its own repo.
+  if (STANDALONE) return onDiskCustomNames();
   const isProd = process.env.NODE_ENV === 'production';
   if (isProd && !force) {
     // Nothing to do: the registry this process serves is already compiled in.
@@ -73,6 +114,26 @@ function syncCustom({ force = false } = {}) {
   }
   const tenantId = activeTenantId();
   const src = srcDirFor(tenantId);
+
+  // AN ABSENT SOURCE DIRECTORY IS NOT A DECISION TO DELETE EVERY COMPONENT.
+  //
+  // The same distinction syncChrome makes below, and for the same hard-won reason.
+  // "No components found" is correct when the directory EXISTS and is empty — the
+  // project genuinely has none. It is catastrophic when the directory is simply NOT
+  // THERE, because then we know nothing, and the cleanup pass below deletes every
+  // mirrored file.
+  //
+  // That is exactly what happened to an exported project running `npm run dev`
+  // after the export stopped bundling the duplicate it used to mirror from: 32
+  // components, all of the project's own work, unlinked on the first render. The
+  // STANDALONE guard above now stops that case at source, but this is the floor —
+  // it makes the whole class impossible rather than one path fixed, including for
+  // any repo still carrying an older copy of this file.
+  if (src && !fs.existsSync(src)) {
+    console.warn(`[custom] no component source at ${src} — keeping the existing files untouched.`);
+    return onDiskCustomNames();
+  }
+
   let names = [];
   try { fs.mkdirSync(CUSTOM_DIR, { recursive: true }); } catch {}
 
@@ -150,9 +211,38 @@ function chromeSrcDirFor(tenantId) {
 // overlay is the FULL set — its own files plus the shipped default for any piece it
 // hasn't touched. Owns none ⇒ empty overlay, resolver uses shipped entirely.
 function syncChrome(tenantId = activeTenantId()) {
+  // Same rule, stated at this entry point too because syncChrome is also called
+  // directly: in an export, app/chrome is committed source and is left alone.
+  if (STANDALONE) return expectedChromeNames();
   if (!fs.existsSync(CHROME_DIR)) { try { fs.mkdirSync(CHROME_DIR, { recursive: true }); } catch {} }
   if (!fs.existsSync(SHIPPED_CHROME_DIR)) { writeChromeIndex([]); return []; }
   const src = chromeSrcDirFor(tenantId);
+
+  // AN ABSENT SOURCE DIRECTORY IS NOT A DECISION TO REVERT TO STOCK.
+  //
+  // This is the distinction that cost three days. Below, "owned is empty" means
+  // the project reverted its chrome, so the overlay is deleted and the shipped
+  // components render again. That is correct — when the directory EXISTS and is
+  // empty. It is catastrophically wrong when the directory is simply NOT THERE,
+  // because then we know nothing, and deleting an overlay we were handed is the
+  // one irreversible choice available.
+  //
+  // It is not there in exactly one situation: an exported project running `npm
+  // run dev`, where data/tenants/<id>/chrome was never bundled. The sync then
+  // destroyed the header, cart and checkout the export had correctly shipped, so
+  // the developer saw the stock "market" storefront and their work appeared lost.
+  // (githubHandover now bundles that directory; this is the guard that makes the
+  // whole class of failure impossible rather than fixed in one place.)
+  //
+  // `src === null` is different again and still means stock: that is master, or no
+  // tenant at all, which is a positive statement that there is no project chrome.
+  if (src && !fs.existsSync(src)) {
+    // Leave the overlay and the barrel exactly as they are, and say why — a
+    // silent bail is how this went unnoticed through 2300 passing tests.
+    console.warn(`[chrome] no chrome source at ${src} — keeping the existing overlay untouched.`
+      + ' An exported project needs data/tenants/<id>/chrome; re-export if this is a clone.');
+    return expectedChromeNames();
+  }
 
   let owned = [];
   try { if (src) owned = fs.readdirSync(src).filter((f) => SAFE.test(f)); } catch { owned = []; }
@@ -544,6 +634,27 @@ function expectedNames() {
   } catch { return []; }
 }
 
+// The components actually present in app/custom. In an export that IS the answer
+// to "which components does this project have" — there is no source dir to
+// consult, because the files on disk are the source.
+function onDiskCustomNames() {
+  try {
+    return fs.readdirSync(CUSTOM_DIR).filter((f) => SAFE.test(f) && f !== SEED)
+      .map((f) => f.replace(/\.jsx$/, '')).sort();
+  } catch { return []; }
+}
+
+// What the chrome overlay CURRENTLY holds, read from the overlay itself rather
+// than from a source dir. Used when syncChrome declines to act because it has no
+// source to act on: the honest answer to "what chrome is registered" is then
+// "whatever is still registered", not an empty list.
+function expectedChromeNames() {
+  try {
+    return fs.readdirSync(CHROME_DIR).filter((f) => SAFE.test(f))
+      .map((f) => f.replace(/\.jsx$/, '')).sort();
+  } catch { return []; }
+}
+
 // A fingerprint of the tokens the ACTIVE workspace should be compiled with, for
 // the boot reconcile in server.js. Same problem the component registry has: tokens
 // live on the volume, a fresh image ships the defaults, and the watcher only fires
@@ -563,5 +674,6 @@ function expectedTokens() {
 module.exports = {
   syncCustom, activeTenantId, CUSTOM_DIR, renderIndex, expectedNames,
   syncTokens, expectedTokens, parseTokens, TOKEN_CONTRACT, TOKENS,
-  syncChrome, renderChromeIndex, CHROME_DIR,
+  syncChrome, renderChromeIndex, chromeSrcDirFor, expectedChromeNames,
+  onDiskCustomNames, STANDALONE, CHROME_DIR,
 };

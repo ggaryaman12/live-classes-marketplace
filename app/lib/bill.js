@@ -15,14 +15,27 @@ export const num = (obj, ...keys) => {
 
 // Raw bill response → ordered typed lines the UI renders.
 // kind: 'subtotal' | 'charge' (adds) | 'discount' (subtracts, shown negative).
+// FIRST USABLE STRING, not first truthy value.
+//
+// The backend sends `CURRENCY: {}` — an empty object, which is TRUTHY, so
+// `d.CURRENCY || d.currency_symbol || '₹'` returned `{}`. That object reached
+// the DOM as a React child and threw error #31 ("object with keys {}"), which
+// takes down the ENTIRE checkout page: the bill arrives correctly, the totals
+// are right, and then the page dies while rendering them.
+//
+// It only showed on carts that clear the store's minimum order. Below it the
+// backend refuses, the safe fallback bill renders instead, and checkout looks
+// perfectly healthy — which is why this survived a browser pass.
+const str = (...vals) => {
+  for (const v of vals) {
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  }
+  return null;
+};
+
 export function normalizeBill(d, items = [], deliveryType = 1) {
-  // `CURRENCY` can come back as an object — `{}` when unconfigured, or
-  // `{ currency_id, symbol, … }` — never assume it's a printable string.
-  const c = d.CURRENCY;
-  const currency = (typeof c === 'string' && c)
-    || (c && typeof c === 'object' && typeof c.symbol === 'string' && c.symbol)
-    || (typeof d.currency_symbol === 'string' && d.currency_symbol)
-    || '₹';
+  const currency = str(d.CURRENCY, d.currency_symbol, d.CURRENCY_SYMBOL) || '₹';
   const total = num(d, 'NET_PAYABLE_AMOUNT', 'net_payable_amount', 'total_payable', 'grand_total', 'total');
 
   // Carried through separately from the display lines because create_task
@@ -39,7 +52,7 @@ export function normalizeBill(d, items = [], deliveryType = 1) {
   const breakup = d.BILL_BREAKUP || d.bill_breakup;
   if (Array.isArray(breakup) && breakup.length) {
     const lines = breakup.map((l, i) => {
-      const label = l.NAME || l.name || l.LABEL || l.label || `Line ${i + 1}`;
+      const label = str(l.NAME, l.name, l.LABEL, l.label) || `Line ${i + 1}`;
       const value = num(l, 'VALUE', 'value', 'AMOUNT', 'amount');
       const isDiscount = l.IS_DISCOUNT || l.is_discount || /discount|off|saved|coupon|promo/i.test(label) || value < 0;
       return { key: `bb_${i}`, label, value: isDiscount ? -Math.abs(value) : value, kind: isDiscount ? 'discount' : (i === 0 ? 'subtotal' : 'charge') };

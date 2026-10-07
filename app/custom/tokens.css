@@ -17,7 +17,7 @@
   --radius-lg: 22px;
   --motion: 200ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --cursor: 💻;
+  /* --cursor: 💻; */
 }
 
 [data-theme="dark"] {

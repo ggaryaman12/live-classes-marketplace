@@ -40,11 +40,10 @@ export default function CartSheet({ open, onClose, onSignIn }) {
                     <div className="ci-name">{it.name}</div>
                     <div className="ci-price">₹{it.price}</div>
                   </div>
-                  <div className="ci-qty">
-                    <button onClick={() => setQty(it.id, it.qty - 1)}>−</button>
-                    <span>{it.qty}</span>
-                    <button onClick={() => setQty(it.id, it.qty + 1)}>+</button>
-                  </div>
+                  {/* Per instruction: a class enrollment isn't something a
+                     parent buys "2 of" — no +/- stepper, ever. One tap takes
+                     the whole line out of the cart. */}
+                  <button className="ci-remove" onClick={() => setQty(it.id, 0)}>Remove</button>
                 </div>
               ))}
             </div>
@@ -69,6 +68,14 @@ export default function CartSheet({ open, onClose, onSignIn }) {
           </div>
         </div>
       )}
+      <style>{`
+        .ci-remove{
+          flex:none; height:28px; padding:0 12px; border-radius:7px;
+          border:1px solid var(--line-2); background:var(--card); color:var(--muted);
+          font-size:12px; font-weight:700; cursor:pointer;
+        }
+        .ci-remove:hover{ color:#c0392b; border-color:#c0392b; }
+      `}</style>
     </>
   );
 }

@@ -31,6 +31,7 @@ export default function LiveRefresh() {
   useEffect(() => {
     let selectMode = false;
     let overlay = null;
+    let revealTimer = null;   // clears the transient "here it is" flash after a reveal
 
     function ensureOverlay() {
       if (overlay) return overlay;
@@ -85,6 +86,17 @@ export default function LiveRefresh() {
       const children = [];
       for (const c of el.querySelectorAll('*')) children.push(c.getBoundingClientRect());
       return unionBounds(self, children);
+    }
+
+    // The FIRST descendant with a real box. The node wrapper is display:contents
+    // (no box), so scrollIntoView on it does nothing — scroll this instead. Falls
+    // back to the wrapper itself if somehow nothing has a box.
+    function firstBoxChild(el) {
+      for (const c of el.querySelectorAll('*')) {
+        const r = c.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) return c;
+      }
+      return el;
     }
 
     function highlight(el) {
@@ -142,6 +154,33 @@ export default function LiveRefresh() {
       if (d?.type === 'yelo:highlight') {
         const el = d.id ? document.querySelector(`[data-node-id="${CSS.escape(d.id)}"]`) : null;
         highlight(el);
+        return;
+      }
+      // REVEAL — "take me to what you just built". Scroll the node into view, then
+      // flash the highlight box for a moment so the eye lands on it, then clear it
+      // (unlike select-mode highlight, this is transient). This is what the Studio
+      // fires after a build so the preview jumps to the new section.
+      if (d?.type === 'yelo:reveal') {
+        const el = d.id ? document.querySelector(`[data-node-id="${CSS.escape(d.id)}"]`) : null;
+        if (el) {
+          // SCROLL A REAL BOX, NOT THE WRAPPER. The node wrapper is
+          // display:contents (see the select-overlay note above) — it has NO box
+          // of its own, so scrollIntoView on IT does nothing and the page never
+          // moves. Scroll the first child element that actually has a box; that is
+          // the top of the section. (This was the bug: it navigated to the page
+          // but never scrolled, and the highlight ended up below the fold.)
+          const scrollTarget = firstBoxChild(el);
+          try { scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+          catch { try { scrollTarget.scrollIntoView(); } catch {} }
+          highlight(el);
+          clearTimeout(revealTimer);
+          revealTimer = setTimeout(() => { if (!selectMode) highlight(null); }, 2600);
+          // ACK so the Studio stops re-trying. This matters for a CROSS-PAGE
+          // reveal: the preview may still be navigating to the built page when the
+          // Studio first fires, so it keeps trying on each load — the ack is the
+          // signal that the node was actually found here and scrolled to.
+          try { window.parent?.postMessage({ type: 'yelo:revealed', id: d.id }, '*'); } catch {}
+        }
         return;
       }
       // LIVE THEME. Set the custom property straight onto :root so dragging a

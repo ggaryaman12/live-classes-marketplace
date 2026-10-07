@@ -16,9 +16,17 @@ import ThemedCursor from './ThemedCursor';
 import ThemeSwitch from './ThemeSwitch';
 import BackendNotice from './BackendNotice';
 
+// THE BROWSER TAB IS BRANDING TOO, and it is the surface nobody checks — the
+// Studio preview is an iframe, so the tab title is invisible for the entire time a
+// project is being built. It only shows up once somebody opens their own exported
+// repo, which is exactly how this was found. See app/lib/siteName.js.
+import { siteName, isUnnamed } from './lib/siteName';
+
 export const metadata = {
-  title: 'market — order from local stores',
-  description: 'A fast, beautiful marketplace storefront. Built with Yelo Studio.',
+  title: siteName(),
+  description: isUnnamed()
+    ? 'A marketplace storefront built with YELO Studio.'
+    : `${siteName()} — built with YELO Studio.`,
 };
 
 export default function RootLayout({ children }) {

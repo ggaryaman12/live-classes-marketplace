@@ -81,8 +81,8 @@ these must keep working:
 
 This workspace's whole palette, type, radii and motion tempo are fourteen CSS
 custom properties in **`tokens.css`** at the workspace root. That file is loaded
-by the site's root layout, and every piece of chrome you do not control — the
-header, the nav, the cart, checkout — is painted from it.
+by the site's root layout, and every piece of site chrome — the header, the nav,
+the cart, checkout — is painted from it.
 
 - **A site-wide look change is an edit to `tokens.css`, and nothing else.**
   "Make it warmer", "less green", "softer corners", "calmer motion" — change the
@@ -107,6 +107,54 @@ gradient-heavy hero, or a giant rounded "card" look.
 
 **Every change must stay mobile-responsive.** Think at 390px, 820px and 1280px;
 extend the existing media queries rather than bypassing them with fixed widths.
+
+## The storefront shell — the header, hero, cart and checkout are YOURS
+
+The header and nav, the cart drawer, the checkout, the store header, the product cards,
+the catalogue, the hero: real component files at **`chrome/<Name>.jsx`** in this
+workspace. Your copy is what renders. Nothing to register, no rebuild to ask for.
+
+**THE HEADER IS A DESIGN TASK, NOT A TWEAK.** This workspace deliberately ships with NO
+header, hero, catalogue, product card or cart UI of its own. That is not an omission to
+work around — there is no generic one to inherit on purpose, because a header built for a
+swimming-pool business should have nothing in common with one built for live classes, in
+exactly the way their landing pages do not.
+
+So when you build this storefront, **write them**, for THIS business, from the brief:
+
+- `chrome/Header.jsx` — the nav this business actually needs. A classes marketplace
+  wants subjects and "my courses"; a pool service wants service areas and a quote
+  button. Not a generic store header with the words swapped.
+- `chrome/Hero3DSection.jsx`, `chrome/EntrySequence.jsx` — the first impression.
+- `chrome/Catalogue.jsx`, `chrome/StoreCard.jsx`, `chrome/StoreHeader.jsx` — how
+  this business's offer is browsed and compared.
+- `chrome/CartSheet.jsx` — the cart as this business would present it.
+
+If one of those files is absent, CREATE it. Starter versions exist in the shipped app and
+are used only so the site still compiles before you have written yours — treat them as
+scaffolding to replace, never as a baseline to nudge. Match the design direction and the
+page sections you are building, so the shell and the pages read as one product.
+
+**FOUR FILES ARE A BACKEND CONTRACT, AND THOSE ARE SEEDED.** `chrome/CheckoutPanel.jsx`,
+`chrome/AuthModal.jsx`, `chrome/OrderReceipt.jsx` and `chrome/BillLines.jsx` are in
+this workspace already, carrying the real login, bill, order and payment flows — roughly
+120 live API calls between them. **Restyle them as much as you like; keep their API calls
+exactly as they are.** Rewriting these from scratch produces a checkout that looks
+finished and takes no money, and the merchant discovers that in front of a customer. If
+you need the checkout to look completely different, change its markup and styling — not
+its fetches, field names or call order.
+
+- **Keep each file's default export.** Keep its imports of the shared
+  engine — `../lib/cart` (cart state), `../lib/session`, `../lib/apiPath`,
+  `../lib/order` — exactly as they are; that plumbing is how the storefront actually
+  works. Restyle and relayout freely; do not fork the engine under `lib/`.
+- **The marketplace rules above still hold, even here.** A closed store cannot take an
+  instant order; an unavailable product stays un-addable with a visible reason; the cart
+  stays single-merchant; the minimum order still blocks checkout; the bill is whatever
+  `get_bill_breakdown` returns and the order goes through the real endpoints. You may
+  change how all of this LOOKS; you may not remove, fake or bypass what it DOES.
+- **Never invent a backend call in chrome.** If a capability is not in
+  `docs/YELO_API_REFERENCE.md`, it does not exist — say so rather than fabricate one.
 
 ## Design skills — use them for anything visual
 

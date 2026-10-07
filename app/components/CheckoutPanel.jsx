@@ -1,3 +1,13 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// TALKS TO THE YELO BACKEND. Restyle it freely; keep the API calls.
+//
+// The markup, classes and copy in here are yours to change. The fetches, the
+// field names and the order of the bill/order/payment calls are a contract with
+// the YELO API — if they change, this still renders but stops working, and the
+// failure shows up at the till rather than in the build.
+//
+// Endpoints and payloads: docs/YELO_API_REFERENCE.md
+// ─────────────────────────────────────────────────────────────────────────────
 'use client';
 // Checkout + payment on one surface.
 //
@@ -19,12 +29,25 @@ import { getSession, setSession as saveSession } from '../lib/session';
 // own `{ CASH: 4 }` — a third copy of a wrong constant, which is exactly how
 // three copies drift.
 import { PAYMENT } from '../lib/order';
+import { apiPath } from '../lib/apiPath';
 import BillLines from './BillLines';
+
+// The receipt is the confirmation's whole hero, and it is real text, so it is
+// NOT lazy — delaying it would delay the order number itself. Only the printing
+// motion waits for a frame, inside the component.
+import OrderReceipt from './OrderReceipt';
 
 const DEFAULT = { lat: 28.61482, lng: 77.219989 };
 
+// THE PREFIX APPLIES HERE TOO — and this is the file where it costs money.
+//
+// `apiPath()` was written for exactly this bug and then applied to auth and the
+// store list, while checkout kept calling root-relative `/api/...`. Served under
+// `/preview`, every call here resolved against the HOST root instead of the app:
+// the bill 404'd, the wallet never loaded, and PLACING AN ORDER failed. Found by
+// hand, from a browser, against the storefront the AI had just built.
 const post = (url, body) =>
-  fetch(url, {
+  fetch(apiPath(url), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -60,10 +83,25 @@ export default function CheckoutPanel({
   const [error, setError] = useState('');
   const [badFields, setBadFields] = useState([]);
 
+  // WHETHER WE HAVE LOOKED FOR A SESSION YET — not whether one exists.
+  //
+  // `session` starts null, which is indistinguishable from "signed out". The
+  // bill effect below fired immediately on that null, so the first request went
+  // out UNAUTHENTICATED, the backend refused it, and the estimated fallback
+  // rendered — Delivery ₹25, Taxes ₹1. A moment later the session resolved, the
+  // bill refetched for real, and those lines vanished and the total changed.
+  //
+  // The customer sees a price, then a different price, in under a second. Both
+  // came from us; only the second is the shop's actual answer. So nothing is
+  // requested until we know who is asking.
+  const [sessionReady, setSessionReady] = useState(false);
+
+
   useEffect(() => {
     const s = getSession();
     setSession(s);
     if (s) setContact({ name: s.name || '', phone: s.phone || '', email: s.email || '' });
+    setSessionReady(true);
   }, []);
 
   // The bill is the backend's answer, and it changes with the address and the
@@ -71,6 +109,9 @@ export default function CheckoutPanel({
   // on those is not an optimisation, it is correctness.
   const refreshBill = useCallback(async () => {
     if (!cart.items.length) return;
+    // See `sessionReady` above: asking before we know the customer produces a
+    // bill the shop never quoted.
+    if (!sessionReady) return;
     setBilling(true);
     const b = await post('/api/bill', {
       storeId: cart.storeId,
@@ -84,7 +125,7 @@ export default function CheckoutPanel({
     if (b?.unreachable) { setBillFailed(true); return; }
     setBillFailed(false);
     setBill(b);
-  }, [cart.items, cart.storeId, address.lat, address.lng, session, mode]);
+  }, [cart.items, cart.storeId, address.lat, address.lng, session, mode, sessionReady]);
 
   useEffect(() => { refreshBill(); }, [refreshBill]);
 
@@ -169,7 +210,19 @@ export default function CheckoutPanel({
     });
     setPlacing(false);
 
-    if (r.ok) { setPlaced(r); cart.clear(); return; }
+    if (r.ok) {
+      // SNAPSHOT BEFORE CLEARING. The receipt prints what was bought, and
+      // `cart.clear()` on the next line empties the live cart — reading it on
+      // the confirmation would print a receipt with no items on it.
+      setPlaced({
+        ...r,
+        storeName: cart.storeName,
+        items: cart.items.map((it) => ({ ...it })),
+        bill,
+      });
+      cart.clear();
+      return;
+    }
 
     // `missing` comes from the preflight and names wire fields; map them back to
     // the inputs on this screen so the right one gets highlighted.
@@ -185,16 +238,40 @@ export default function CheckoutPanel({
   }
 
   if (placed) {
+    // THE RECEIPT, not a success toast.
+    //
+    // This was a green tick and two sentences — the shape of a form that
+    // stopped rather than a shop that took an order. The order number is the
+    // one thing a customer comes back to this screen for, so it is the largest
+    // element and it is selectable text, not decoration.
+    //
+    // The 3D parcel is the single authored moment in the whole flow: it mounts
+    // after this text has painted, never before, and is not rendered at all
+    // under prefers-reduced-motion.
     return (
       <div className="ck-done">
-        <div className="ck-done-check" aria-hidden="true">✓</div>
-        <h1>Order placed</h1>
-        <p>{placed.orderId ? <>Order <b>#{placed.orderId}</b> is confirmed.</> : 'Your order is confirmed.'}</p>
-        <p className="ck-done-sub">
+        <h1>{pay === PAYMENT.CASH ? 'Order placed' : 'Order confirmed'}</h1>
+        <p className="ck-done-sub ck-done-lead">
           {pay === PAYMENT.CASH
             ? 'Pay in cash when it arrives. You’ll get updates as the store prepares it.'
             : 'You’ll get updates as the store prepares it.'}
         </p>
+
+        {/* The receipt prints the order itself — shop, items, totals, number —
+            so the flourish and the information are the same object. `placedCart`
+            is the cart as it was AT PURCHASE: the live cart is cleared the
+            moment the order lands, and reading it here would print an empty
+            receipt. */}
+        <OrderReceipt
+          storeName={placed.storeName}
+          orderId={placed.orderId}
+          items={placed.items}
+          bill={placed.bill}
+          currency={currency}
+          payLabel={pay === PAYMENT.CASH ? 'Pay cash on delivery' : 'Paid'}
+          session={session}
+        />
+
         <button className="ck-place ck-done-btn" onClick={() => router.push('/')}>Back to stores</button>
       </div>
     );
@@ -327,7 +404,7 @@ export default function CheckoutPanel({
                 flight the total on screen is the one for the PREVIOUS address
                 or delivery mode, and `amount` is sent from it. Placing then
                 sends a figure the backend has already superseded. */}
-            <button className="ck-place" disabled={placing || billing || !bill || billFailed} onClick={place}>
+            <button className="ck-place" data-busy={placing ? "1" : undefined} disabled={placing || billing || !bill || billFailed} onClick={place}>
               {placing ? 'Placing order…' : billing ? 'Updating total…' : `${ctaLabel} · ${money(total)}`}
             </button>
             <div className="ck-secure">🔒 {session ? `Signed in as ${session.name || 'you'}` : 'Guest checkout'}</div>

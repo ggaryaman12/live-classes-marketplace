@@ -3,7 +3,6 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { YELO_BASE, YELO_TENANT } from "../lib/yeloTenant";
 
 /**
  * TeacherDirectory — the "teachers with classes open now" listing, replacing
@@ -30,6 +29,14 @@ import { YELO_BASE, YELO_TENANT } from "../lib/yeloTenant";
  * status and an explicit "View classes" action — rather than a storefront tile.
  */
 
+const YELO_BASE = "https://test-api-3025.jungleworks.com";
+const YELO_TENANT = {
+  marketplace_user_id: 510009445,
+  marketplace_reference_id: "7a57517ff024ea5715497555a297e86c",
+  domain_name: "deliverecttest.devweb1.yelo.red",
+  dual_user_key: 0,
+  language: "en",
+};
 const COORDS = { latitude: 28.61482, longitude: 77.219989 };
 const PAGE_SIZE = 9;
 

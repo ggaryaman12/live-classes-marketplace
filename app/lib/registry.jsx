@@ -9,8 +9,12 @@
 // it has one, else the shipped default. So a storefront that edited its
 // checkout/catalogue/store-header renders THAT, not the stock version.
 import { Chrome } from './chromeReg';
-const { StoreCard, CheckoutPanel, BillLines, Hero3DSection, EntrySequence, StoreHeader, Catalogue } = Chrome;
 import CustomComponent from './CustomComponent';
+import { titleHtml } from './safeText';
+
+// Chrome components resolve to the project's OWN copy when it has one, else the shipped
+// default (see lib/chromeReg.js). Destructured here so the render fns below are unchanged.
+const { StoreCard, CheckoutPanel, BillLines, Hero3DSection, EntrySequence, StoreHeader, Catalogue } = Chrome;
 
 export const REGISTRY = {
   Page: {
@@ -29,7 +33,7 @@ export const REGISTRY = {
       <section className="hero2">
         <div className="hero2-inner">
           {p.eyebrow && <div className="hero2-eyebrow">{p.eyebrow}</div>}
-          <h1 className="hero2-title" dangerouslySetInnerHTML={{ __html: (p.title || '').replace(/\n/g, '<br/>') }} />
+          <h1 className="hero2-title" dangerouslySetInnerHTML={{ __html: titleHtml(p.title) }} />
           {p.subtitle && <p className="hero2-sub">{p.subtitle}</p>}
           <div className="hero2-search">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
