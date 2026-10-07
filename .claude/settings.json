@@ -19,7 +19,7 @@
       "Bash(cat:*)",
       "Bash(grep:*)",
       "Bash(mkdir:*)",
-      "Read(**/.env.development)",
+      "WebFetch"
     ],
     "deny": [
       "Read(/etc/**)",
@@ -43,11 +43,11 @@
       "Bash(env)",
       "Bash(printenv:*)",
       "Bash(cat /etc/**)",
-      "Bash(chmod 777:*)",
-      "WebFetch"
+      "Bash(chmod 777:*)"
     ]
   },
   "// HOOKS": "PostToolUse records every file the model writes into .studio/wrote.log, so the build knows whether a COMPILE is needed instead of inferring it from the page tree. Inference missed the case where an existing component is edited without changing the tree, and the editor then announced 'Preview is live.' over uncompiled code. The build treats a missing log as 'unknown' and falls back to the old inference, so a hook that fails to fire can never make the build LESS careful.",
+  "// HOOKS2": "A second PostToolUse hook records what the model READ (Read/Grep/Glob) into .studio/source-reads.jsonl, so the control room can prove a build is actually grounded in the Yelo codebases (platform-source) and the API reference rather than winging it. Raw {t,tool,p} only — categorization happens at read time in platform/readLog.js. Self-caps at 400 lines. Fire-and-forget (always exits 0): a reads-logger can never break a build.",
   "hooks": {
     "PostToolUse": [
       {
@@ -56,6 +56,15 @@
           {
             "type": "command",
             "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);const f=(i.tool_input&&(i.tool_input.file_path||i.tool_input.notebook_path))||'';if(f){const fs=require('fs'),p=require('path');const dir=p.join(process.env.CLAUDE_PROJECT_DIR||process.cwd(),'.studio');fs.mkdirSync(dir,{recursive:true});fs.appendFileSync(p.join(dir,'wrote.log'),f+'\\n')}}catch(e){}process.exit(0)})\""
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);const ti=i.tool_input||{};const f=ti.file_path||ti.path||ti.pattern||'';if(f){const fs=require('fs'),p=require('path');const dir=p.join(process.env.CLAUDE_PROJECT_DIR||process.cwd(),'.studio');fs.mkdirSync(dir,{recursive:true});const lg=p.join(dir,'source-reads.jsonl');let a=[];try{a=fs.readFileSync(lg,'utf8').split('\\n').filter(Boolean)}catch(e){}a.push(JSON.stringify({t:Date.now(),tool:i.tool_name||'',p:String(f)}));fs.writeFileSync(lg,a.slice(-400).join('\\n')+'\\n')}}catch(e){}process.exit(0)})\""
           }
         ]
       }

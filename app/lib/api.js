@@ -141,17 +141,86 @@ function normalizeStore(s) {
 
 /* ------------------------------ catalogue ----------------------------- */
 // Returns [{ id, name, products:[{id,name,price,image,description,veg}] }]
+// THE CATALOGUE IS TWO CALLS, NOT ONE.
+//
+// This used to call `product/getAll`, which answers 200 with `data: []` for
+// every store on this backend — verified against both API hosts. So the
+// catalogue always looked empty, the demo fallback below always fired, and
+// checkout ran on INVENTED product ids. The bill was computed for products
+// that do not exist and an order could never be placed.
+//
+// The real marketplace webapp uses the pair the storefront actually ships:
+//
+//   catalogue/get                -> the category tree
+//   get_products_for_category    -> the products in one category
+//
+// Neither needs a signed-in customer, so guest browsing works. Categories are
+// fetched in parallel because a store with a dozen of them would otherwise pay
+// a dozen sequential round trips before anything renders.
 export async function getCatalogue(storeId, latitude, longitude) {
-  const r = await yeloPost('product/getAll', {
-    ...tenantEnvelope(), user_id: Number(storeId), vendor_id: 0, latitude, longitude,
-  });
-  const cats = normalizeCatalogue(r.data);
-  const hasProducts = (list) => (list || []).some((c) => (c.products?.length || 0) > 0 || hasProducts(c.children));
-  if (cats.length && hasProducts(cats)) return cats;
-  // This tenant's stores are empty on the backend. Fall back to a clearly
-  // labelled demo catalogue so the cart→checkout→order journey is walkable.
-  // Remove `demoCatalogue()` once a tenant with real products is used.
-  return demoCatalogue();
+  const env = tenantEnvelope();
+  // NO latitude/longitude HERE. Both catalogue endpoints are Joi-validated and
+  // REJECT unknown keys — `catalogue/get` answers status 100 `"latitude" is not
+  // allowed` and returns nothing. That looked exactly like "this store has no
+  // catalogue", so the demo fallback fired and the fix appeared not to work.
+  // Same class of bug as the OTP one documented in api/auth/route.js: an
+  // envelope field the marketplace_* endpoints ignore is fatal on these.
+  const base = { ...env, user_id: Number(storeId), vendor_id: 0 };
+
+  const tree = await yeloPost('catalogue/get', { ...base, show_all_sub_categories: 1 });
+  const categories = flattenApiCategories(tree.status === 200 ? tree.data?.result : null);
+  if (!categories.length) return demoCatalogue();
+
+  const filled = await Promise.all(categories.map(async (c) => {
+    // A category that declares no products is not worth a round trip.
+    if (c.hasProducts === 0) return { ...c, products: [] };
+    const r = await yeloPost('get_products_for_category', {
+      ...base,
+      parent_category_id: Number(c.id),
+      page_no: 1, offset: 0, limit: PRODUCT_PAGE_LIMIT,
+    });
+    const rows = r.status === 200 && Array.isArray(r.data) ? r.data : [];
+    return { ...c, products: rows.map(toProduct) };
+  }));
+
+  const anyProducts = filled.some((c) => c.products.length > 0);
+  if (!anyProducts) return demoCatalogue();
+  return buildCategoryTree(filled);
+}
+
+// One page is enough for a storefront menu; the marketplace webapp itself
+// requests 25 at a time.
+const PRODUCT_PAGE_LIMIT = 25;
+
+// `catalogue/get` returns a nested tree under `sub_categories`. Flatten it,
+// keeping the parent link so the tree can be rebuilt once products are in.
+function flattenApiCategories(result, parentId = null, depth = 1, out = []) {
+  if (!Array.isArray(result) || depth > MAX_CATEGORY_DEPTH) return out;
+  for (const c of result) {
+    const id = c.catalogue_id ?? c.category_id ?? c.id;
+    if (id == null) continue;
+    out.push({
+      id: String(id),
+      name: c.name || c.category_name || 'Menu',
+      parentId: c.parent_category_id != null ? String(c.parent_category_id) : parentId,
+      depth,
+      hasProducts: c.has_products,
+      products: [],
+    });
+    flattenApiCategories(c.sub_categories, String(id), depth + 1, out);
+  }
+  return out;
+}
+
+function buildCategoryTree(flat) {
+  const byId = new Map(flat.map((c) => [c.id, { ...c, children: [] }]));
+  const roots = [];
+  for (const c of byId.values()) {
+    const parent = c.parentId != null ? byId.get(c.parentId) : null;
+    if (parent && parent !== c) parent.children.push(c);
+    else roots.push(c);
+  }
+  return roots;
 }
 
 // Categories are n-level (marketplace supports up to 3: parent → child →
@@ -161,15 +230,40 @@ export async function getCatalogue(storeId, latitude, longitude) {
 const MAX_CATEGORY_DEPTH = 3;
 
 function toProduct(p) {
-  const available = !(p.is_available === 0 || p.in_stock === 0 || p.out_of_stock === 1);
+  // AVAILABILITY, READ THE WAY THE REAL MARKETPLACE READS IT.
+  //
+  // `get_products_for_category` sends `is_enabled` (merchant switched it off)
+  // and `is_deleted`. Neither was checked here, so a disabled product rendered
+  // with a live ADD button and failed at order time.
+  //
+  // `maximum_quantity` is NOT an availability flag, and reading it as one was
+  // a bug in the first draft of this fix. The marketplace webapp treats it as
+  // a per-order CAP that only applies when it is above zero
+  // (app-cart.service.ts:94 — `if (maximum_quantity > 0)`), so 0 means "no
+  // limit". Treating 0 as unavailable hides products that are perfectly
+  // orderable — two of the three on the test merchant.
+  const available = !(
+    p.is_available === 0 || p.in_stock === 0 || p.out_of_stock === 1
+    || p.is_enabled === 0 || p.is_deleted === 1
+  );
+  // The cap, carried through so the cart can enforce it rather than letting
+  // the backend reject the order after the customer has committed.
+  const maxQty = Number(p.maximum_quantity) > 0 ? Number(p.maximum_quantity) : null;
   return {
     id: p.id ?? p.product_id,
     name: p.name || p.product_name,
-    price: Number(p.selling_price ?? p.price ?? p.cost ?? (p.variants?.[0]?.price)) || 0,
-    image: p.image || (Array.isArray(p.images) ? p.images[0] : null) || null,
+    // `special_price` is the discounted price when the merchant has set one;
+    // 0 means "no offer", not "free".
+    price: Number(
+      (p.special_price > 0 ? p.special_price : null)
+      ?? p.selling_price ?? p.price ?? p.product_base_price ?? p.cost
+      ?? (p.variants?.[0]?.price),
+    ) || 0,
+    image: p.image || p.image_url || p.thumb_url || (Array.isArray(p.images) ? p.images[0] : null) || null,
     description: p.description || '',
     veg: p.is_veg === 1 || p.veg === 1,
     available,                                   // gates the ADD button
+    maxQty,                                      // null = no per-order cap
     hasOptions: Array.isArray(p.variants) && p.variants.length > 1,
   };
 }
@@ -320,12 +414,67 @@ export async function placeOrder(args) {
   };
 }
 
+/* ------------------------- one placed order --------------------------- */
+// THE ORDER, FROM THE BACKEND'S OWN RECORD.
+//
+// The confirmation used to print a snapshot of the cart taken in the browser
+// the instant before it was cleared. That works until the page is refreshed,
+// and it prints OUR numbers rather than the ones the shop confirmed — the same
+// mistake as the estimated bill that rendered before the real one.
+//
+// This reads the order back by its id, so the receipt shows what the store
+// actually recorded and survives a reload.
+export async function getOrder(jobId, session) {
+  if (!jobId || !session?.vendorId) return null;
+  const r = await yeloPost('get_service_job_history', {
+    ...tenantEnvelope(),
+    job_id: Number(jobId),
+    vendor_id: session.vendorId,
+    access_token: session.token,
+  });
+  if (r.status !== 200) return null;
+  const d = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (!d) return null;
+
+  // The products array carries its own spellings, like everything else here.
+  const rows = d.order_details || d.products || d.job_products || [];
+  const items = (Array.isArray(rows) ? rows : []).map((p, i) => ({
+    id: p.product_id ?? p.id ?? `i${i}`,
+    name: p.product_name || p.name || 'Item',
+    price: Number(p.unit_price ?? p.price ?? 0) || 0,
+    qty: Number(p.quantity ?? p.qty ?? 1) || 1,
+  }));
+
+  return {
+    orderId: d.job_id || d.unique_order_id || jobId,
+    storeName: d.merchant_name || d.user_name || d.store_name || null,
+    placedAt: d.job_pickup_datetime || d.creation_datetime || null,
+    items,
+    // normalizeBill already reads every spelling this backend uses, and it is
+    // the same shape the checkout rendered — so the receipt and the bill the
+    // customer approved cannot drift apart.
+    bill: normalizeBill(d, items, 1),
+  };
+}
+
 /* --------------------- demo catalogue (fallback) ---------------------- */
 // Clearly-labelled placeholder so the journey works on an empty tenant.
 // Demo tree — includes a nested sub-category so n-level rendering is exercised.
+//
+// NOTHING HERE CAN BE ORDERED, and that is the point.
+//
+// These used to be fully addable. A customer could put `d1` in a cart, reach
+// checkout, and have a bill computed for a product id that does not exist on
+// the backend — which is exactly what happened while `catalogue/get` was
+// failing: the storefront looked like it worked, right up to the order.
+//
+// A placeholder that behaves like real stock is worse than an empty menu,
+// because an empty menu tells the truth. `demo: true` marks every product so
+// the UI can show them as examples and refuse to add them, and `available:
+// false` means anything that ignores the flag still cannot put one in a cart.
 function demoCatalogue() {
-  const p = (id, name, price, description, veg = true, available = true) =>
-    ({ id, name, price, image: null, description, veg, available, hasOptions: false });
+  const p = (id, name, price, description, veg = true) =>
+    ({ id, name, price, image: null, description, veg, available: false, demo: true, maxQty: null, hasOptions: false });
   return [
     { id: 'best', name: 'Bestsellers', demo: true, depth: 1, children: [], products: [
       p('d1', 'Margherita Pizza', 249, 'San Marzano tomato, fresh mozzarella, basil'),

@@ -154,7 +154,6 @@ import { apiPath } from '../lib/apiPath';
 import BillLines from '../components/BillLines';
 import OrderReceipt from '../components/OrderReceipt';
 import SubscriptionConfirm from './SubscriptionConfirm';
-import { YELO_BASE, YELO_TENANT } from '../lib/yeloTenant';
 
 // Meaningless for an online class, but the backend requires SOME lat/lng on
 // every order — see the note above. Never shown to the parent.
@@ -164,6 +163,14 @@ const ONLINE_PLACEHOLDER = {
   lng: 77.219989,
 };
 
+const YELO_BASE = 'https://test-api-3025.jungleworks.com';
+const YELO_TENANT = {
+  marketplace_user_id: 510009445,
+  marketplace_reference_id: '7a57517ff024ea5715497555a297e86c',
+  domain_name: 'deliverecttest.devweb1.yelo.red',
+  dual_user_key: 0,
+  language: 'en',
+};
 // The ONLY three payment_method values recurring/saveRecurringTask's own
 // handler accepts — hardcoded in the real backend, not a tenant setting
 // (yelo-server recurringController.js:1339-1344). Razorpay is deliberately
@@ -542,8 +549,7 @@ function ClassCheckoutInner({
   // a number nobody confirmed as final.
   const total = isSubscription && recurringBill ? recurringBill.total : (bill?.total ?? cart.subtotal);
   const walletShort = wallet.enabled && wallet.balance < total;
-  // Only a printable symbol — the backend's CURRENCY can arrive as `{}`.
-  const currency = typeof bill?.currency === 'string' && bill.currency ? bill.currency : '₹';
+  const currency = bill?.currency || '₹';
   // payment/getPaymentUrl's Joi schema requires vendor_id for a normal
   // (non subscription-plan) payment — there's no guest path for paying
   // online, unlike cash. Verified live: a call with no real session comes

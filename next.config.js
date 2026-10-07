@@ -22,17 +22,20 @@ module.exports = {
   // <Link> and to next/image, but NOT to a bare `fetch('/api/…')` — and the
   // storefront has several. Exposing it lets app/lib/apiPath.js prefix those
   // correctly instead of them resolving against the host root.
-  //
-  // The YELO_* vars feed app/lib/yeloTenant.js — the same names the server
-  // layer already reads, so one env setting moves browser and server together.
-  env: {
-    NEXT_PUBLIC_TENANT_BASE_PATH: basePath || '',
-    NEXT_PUBLIC_YELO_BASE: process.env.YELO_BASE || '',
-    NEXT_PUBLIC_YELO_MKT: process.env.YELO_MKT || '',
-    NEXT_PUBLIC_YELO_REF: process.env.YELO_REF || '',
-    NEXT_PUBLIC_YELO_DOMAIN: process.env.YELO_DOMAIN || '',
-  },
+  env: { NEXT_PUBLIC_TENANT_BASE_PATH: basePath || '' },
   basePath: basePath || undefined,
   assetPrefix: basePath || undefined,
   distDir,
+  // THE CLIENT ROUTER CACHE MUST NOT HOLD A MENU.
+  //
+  // Next reuses a previously fetched page for `dynamic` seconds on client
+  // navigation. For a storefront that means prices, stock and the whole
+  // catalogue can be served from a copy taken minutes ago, with no request to
+  // find out whether any of it is still true. Zero means every navigation asks.
+  //
+  // This is belt-and-braces with StoreCard dropping its `prefetch`: that stops
+  // the full-data prefetch, this stops any reuse that survives it.
+  experimental: {
+    staleTimes: { dynamic: 0, static: 0 },
+  },
 };
