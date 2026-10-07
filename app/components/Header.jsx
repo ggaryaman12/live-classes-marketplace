@@ -35,7 +35,7 @@ export default function Header() {
       <header className="hd">
         <Link href="/" className="hd-logo">
           <img
-            src="https://spark-studio-india-bkt.s3.ap-south-1.amazonaws.com/assets-sparkstudio-co/staging/sparkLogo.png"
+            src="https://spark-studio-india-bkt2.s3.ap-south-1.amazonaws.com/assets-sparkstudio-co/staging/sparkLogo.png"
             alt="Spark Studio"
             height="34"
             style={{ height: 34, width: 'auto', display: 'block' }}
