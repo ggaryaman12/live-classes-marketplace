@@ -44,7 +44,7 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <CartProvider>
           <LiveRefresh />
           {/* Site-wide because it is a property of the THEME, not of a page —
